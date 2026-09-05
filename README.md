@@ -68,12 +68,18 @@ docs/                交接文档 + ADR
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M0 | 基础设施（config/telemetry/cache/ratelimit/llm）+ 环境探测 | 进行中 |
-| M1 | 垂直切片：接口 5xx 突增工单端到端（含工具降级演示） | |
-| M2 | HITL 追问 + 断点恢复 + 日志解析 Agent + SSE 聊天页 | |
-| M3 | 低危处置闭环（回滚/扩缩 + 审计）+ 工单生命周期 | |
-| M4 | 自可观测（全链路 Trace/指标/推理回放）+ 管理面 | |
-| M5 | pod OOM / 慢查询类型 + Milvus 案例库（可选 Loki） | |
+| M0 | 基础设施（config/telemetry/cache/ratelimit/llm）+ 环境探测 | ✅ 完成 |
+| M1 | 垂直切片：接口 5xx 突增工单端到端（真实 LLM+真实集群验收） | ✅ 完成 |
+| M2 | HITL 追问挂起/断点续跑 + LogAgent(client-go) + SSE + 聊天式工单页 | ✅ 完成 |
+| M3 | 处置闭环：k8s.scale/rollout_undo + 人工确认门 + 审计落库 + 恢复回验 | ✅ 完成 |
+| M4 | prompt 热更新（DB 外置+两级缓存 ≤5s 生效）+ 推理回放数据与页面 | ✅ 完成 |
+| M5 | pod OOM 工单类型 + 案例库（Milvus 优先/PG 兜底）+ 相似召回 | ✅ 完成（慢查询类型与 Loki 留作后续） |
+
+> 真实验收记录（2026-09-05，LLM=火山方舟 deepseek-v4-flash，数据源=PreHire kind 集群）：
+> ①5xx 故障注入→工单→根因（证据绑定，置信度 0.85）→resolved；②处置闭环：人工确认
+> k8s.scale 恢复服务（接口 200 回落），全程审计落库；③OOMKilled 真实 Pod→工单→根因
+> （含"容器内存监控缺失"的诚实发现）→resolved；④已解决案例写入 Milvus 并以 0.77/0.55
+> 相似度召回。详细数据见 docs/adr/0001-architecture.md。
 
 ## 关键工程约定
 

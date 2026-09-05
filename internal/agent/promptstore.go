@@ -83,6 +83,15 @@ ON CONFLICT (scene) DO UPDATE SET prompt=EXCLUDED.prompt, updated_at=now()`, sce
 	return err
 }
 
+// Reset 删除 DB 覆盖，恢复内置模板。
+func (s *DBPromptStore) Reset(ctx context.Context, scene string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM agent_configs WHERE scene=$1`, scene); err != nil {
+		return err
+	}
+	_, err := s.ver.BumpVersion(ctx, "prompt")
+	return err
+}
+
 // SceneInfo 管理面场景视图。
 type SceneInfo struct {
 	Scene     string `json:"scene"`

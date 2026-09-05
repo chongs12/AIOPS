@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 		{
 			admin.GET("/prompts", s.listPrompts)
 			admin.PUT("/prompts/:scene", s.updatePrompt)
+			admin.DELETE("/prompts/:scene", s.resetPrompt)
 		}
 		v1.GET("/cases/search", s.searchCases) // M5 相似案例检索
 	}

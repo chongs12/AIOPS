@@ -64,6 +64,27 @@ func (s *Server) updatePrompt(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已更新，≤5s 生效（两级缓存+版本失效）"})
 }
 
+// resetPrompt 恢复场景为内置模板（删除 DB 覆盖并失效版本）。
+func (s *Server) resetPrompt(c *gin.Context) {
+	if s.prompts == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "prompt 管理未装配（需 DB）"})
+		return
+	}
+	type resetter interface {
+		Reset(ctx context.Context, scene string) error
+	}
+	r, ok := s.prompts.(resetter)
+	if !ok {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "当前实现不支持恢复内置"})
+		return
+	}
+	if err := r.Reset(c.Request.Context(), c.Param("scene")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已恢复内置模板"})
+}
+
 // searchCases 相似历史案例检索（M5 验收）。
 func (s *Server) searchCases(c *gin.Context) {
 	if s.caseSearch == nil {

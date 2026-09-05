@@ -61,6 +61,23 @@ submitted → intent_classified → investigating ⇄(回环≤3)
 
 各阶段验收标准见开发计划（README「开发路线」与项目简报第 9 节）。
 
+## M2-M5 增补决策与验收（2026-09-05）
+
+- **HITL/断点**：`awaiting_info` 一等状态持久化（tickets.pending JSONB），用户回复后
+  `POST /tickets/{id}/reply` 合并内容并从意图之后续跑（`Orchestrator.Resume`）。
+- **日志数据源**：client-go 直拉容器日志 + Events + Pod 状态（`k8s.logs/k8s.events/k8s.get_pods`）。
+- **处置工具**：`k8s.scale` / `k8s.rollout_undo`（RS 历史 revision 回写实现），
+  执行器对 Mutating 工具强制 `confirmed=true` 人工确认门 + `tool_audit_log` 审计。
+- **Prompt 热更新**：`agent_configs` 表外置，两级缓存（L1 5s/L2 60s）+ 版本号失效，
+  管理面 `PUT /api/v1/admin/prompts/{scene}` ≤5s 生效，`DELETE` 恢复内置。
+- **案例库**：接口 `cases.Store`；Milvus（19530，AUTOINDEX+COSINE，字符 bigram 哈希
+  64 维嵌入——生产可换真实 embedding 模型）优先，PG+内存余弦兜底；已解决工单异步沉淀，
+  相似案例（score≥0.35）注入根因黑板。
+- **前端**：聊天式工单页以内嵌单页应用（web/static，无构建依赖）随二进制分发，
+  覆盖提单/SSE 实时流水/报告/处置确认/案例与观察视图；Vite 工程化留作后续。
+- **验收记录**：5xx 处置闭环（工单 resolved→确认 scale→服务 200 恢复→审计 6 条）；
+  真实 OOMKilled Pod 工单 resolved（诚实发现内存监控缺失）；案例召回 0.765/0.552。
+
 ## 环境探测结论（2026-09-05 实测，`aiops probe` 可随时复验）
 
 - Prometheus：ingress `http://prometheus.localhost:8080` 可达，16 target 全 up，

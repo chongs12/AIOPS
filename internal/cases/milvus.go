@@ -45,6 +45,10 @@ func NewMilvus(ctx context.Context, addr string, falls *PGStore) (*MilvusStore, 
 			return nil, fmt.Errorf("milvus 建索引: %w", err)
 		}
 	}
+	// 检索前必须 Load；已存在的集合同样确保加载。
+	if err := cli.LoadCollection(ctx, collection, false); err != nil {
+		return nil, fmt.Errorf("milvus 加载集合: %w", err)
+	}
 	slog.Info("Milvus 案例库就绪", "addr", addr, "collection", collection)
 	return &MilvusStore{cli: cli, falls: falls}, nil
 }
