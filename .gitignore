@@ -14,7 +14,7 @@ node_modules/
 configs/config.local.yaml
 
 # 前端
-web/dist/
+
 web/node_modules/
 
 # IDE / OS

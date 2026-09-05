@@ -1,0 +1,45 @@
+import axios from 'axios'
+
+const http = axios.create({ timeout: 30000 })
+
+// ---- 工单 ----
+export const createTicket = (data) => http.post('/api/v1/tickets', data).then(r => r.data)
+export const listTickets = (limit = 50) => http.get('/api/v1/tickets', { params: { limit } }).then(r => r.data)
+export const getTicket = (id) => http.get(`/api/v1/tickets/${id}`).then(r => r.data)
+export const listMessages = (id) => http.get(`/api/v1/tickets/${id}/messages`).then(r => r.data)
+export const listObservations = (id) => http.get(`/api/v1/tickets/${id}/observations`).then(r => r.data)
+export const listAudit = (id) => http.get(`/api/v1/tickets/${id}/audit`).then(r => r.data)
+export const replyTicket = (id, content) => http.post(`/api/v1/tickets/${id}/reply`, { content }).then(r => r.data)
+export const runAction = (id, tool, input) => http.post(`/api/v1/tickets/${id}/actions`, { tool, input }).then(r => r.data)
+
+// ---- 管理面 / 案例库 ----
+export const listPrompts = () => http.get('/api/v1/admin/prompts').then(r => r.data)
+export const updatePrompt = (scene, prompt) => http.put(`/api/v1/admin/prompts/${scene}`, { prompt }).then(r => r.data)
+export const resetPrompt = (scene) => http.delete(`/api/v1/admin/prompts/${scene}`).then(r => r.data)
+export const searchCases = (q) => http.get('/api/v1/cases/search', { params: { q } }).then(r => r.data)
+
+// ---- SSE ----
+export function streamTicket(id, { onMessage, onStatus, onError }) {
+  const es = new EventSource(`/api/v1/tickets/${id}/stream`)
+  es.addEventListener('message', e => onMessage && onMessage(JSON.parse(e.data)))
+  es.addEventListener('status', e => onStatus && onStatus(JSON.parse(e.data).status))
+  es.onerror = () => { es.close(); onError && onError() }
+  return es
+}
+
+// ---- 展示辅助 ----
+export const statusType = (s) => ({
+  submitted: 'info', investigating: 'warning', awaiting_info: 'primary',
+  resolved: 'success', escalated_human: 'danger', failed: 'danger',
+}[s] || 'info')
+export const statusLabel = (s) => ({
+  submitted: '已提交', investigating: '处理中', awaiting_info: '等待补充',
+  resolved: '已解决', escalated_human: '转人工', failed: '失败',
+}[s] || s)
+export const typeLabel = (t) => ({
+  '5xx_surge': '接口 5xx 突增', pod_oom: 'Pod OOM', slow_query: '慢查询', other: '其它',
+}[t] || t)
+export const agentLabel = (a) => ({
+  intent: '🧭 意图识别', metrics: '📊 指标检索', log: '📜 日志解析',
+  rootcause: '🔍 根因推理', reply: '📝 报告生成', action: '⚡ 处置执行',
+}[a] || a || '系统')

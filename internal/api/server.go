@@ -4,7 +4,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"net/http"
+	"strings"
 	"time"
 
 	"aiops/internal/orchestrator"
@@ -55,19 +57,29 @@ func (s *Server) Handler() http.Handler {
 	r.Use(gin.Recovery(), requestLog())
 	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
-	// 聊天式工单页（内嵌单页应用）。
-	r.NoRoute(func(c *gin.Context) {
-		if c.Request.URL.Path != "/" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-			return
-		}
-		data, err := web.Static.ReadFile("static/index.html")
-		if err != nil {
-			c.String(http.StatusInternalServerError, "page missing")
-			return
-		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
-	})
+	// 前端 SPA（Vite 构建产物内嵌）：/ 走 index.html，静态资源直出，其余路径 SPA 回退。
+	distFS, err := web.Dist()
+	if err == nil {
+		indexHTML, _ := fs.ReadFile(distFS, "index.html")
+		fileFS := http.FS(distFS)
+		r.NoRoute(func(c *gin.Context) {
+			path := c.Request.URL.Path
+			if strings.HasPrefix(path, "/api/") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+				return
+			}
+			if path == "/" || !strings.Contains(path[strings.LastIndexByte(path, '/')+1:], ".") {
+				c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
+				return
+			}
+			if f, err := fileFS.Open(path); err == nil {
+				_ = f.Close()
+				c.FileFromFS(path, fileFS)
+				return
+			}
+			c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
+		})
+	}
 
 	v1 := r.Group("/api/v1")
 	{
