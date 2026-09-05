@@ -16,6 +16,7 @@ import (
 
 	"aiops/pkg/config"
 	"aiops/pkg/httpx"
+	"aiops/pkg/llm"
 	"aiops/pkg/telemetry"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -43,6 +44,14 @@ func runProbe(args []string) {
 	p := &prober{httpc: httpx.NewClient(10 * time.Second)}
 	ctx := context.Background()
 
+	// telemetry 全程共享一次初始化：LLM 自检与回环验证的 span 同批上报。
+	tel := telemetry.Init(ctx, telemetry.Config{
+		Enabled:      cfg.Telemetry.Enabled,
+		ServiceName:  cfg.Telemetry.ServiceName,
+		OTLPEndpoint: cfg.Telemetry.OTLPEndpoint,
+		SampleRatio:  cfg.Telemetry.SampleRatio,
+	})
+
 	fmt.Println("== AIOps 环境探测 ==")
 
 	// 硬检查：真实数据源三件套。
@@ -50,12 +59,13 @@ func runProbe(args []string) {
 	p.checkJaeger(cfg.Jaeger)
 	p.checkK8s(ctx, cfg.K8s)
 
-	// 软检查：开发依赖（make devup 可启动）。
+	// 软检查：开发依赖（make devup 可启动）与 LLM（需配置 key）。
 	p.checkRedis(ctx, cfg.Redis)
 	p.checkPostgres(cfg.Postgres)
+	p.checkLLM(ctx, cfg)
 
-	// OTLP 回环：发一条 span 到 Jaeger 再查回，验证 trace 全链路。
-	p.checkOTLPRoundTrip(ctx, cfg)
+	// OTLP 回环：flush 后从 Jaeger 查回本服务，验证 trace 全链路。
+	p.checkOTLPRoundTrip(ctx, cfg, tel)
 
 	p.report()
 }
@@ -239,11 +249,69 @@ func (p *prober) checkPostgres(c config.Postgres) {
 	p.record("postgres", true, true, "可达")
 }
 
-// checkOTLPRoundTrip 发一条 span 到 Jaeger，再通过查询 API 确认服务出现，验证 trace 全链路。
+// llmProvidersFromConfig 从配置构造 provider 链（跳过未注入 key 的项）。
+// M1 起此装配逻辑移入服务启动装配（cmd/aiops）。
+func llmProvidersFromConfig(cfg *config.Config) []llm.Provider {
+	var ps []llm.Provider
+	for _, pc := range cfg.LLM.Providers {
+		if pc.APIKey == "" {
+			continue
+		}
+		ps = append(ps, llm.NewOpenAIProvider(llm.OpenAIOptions{
+			Name:        pc.Name,
+			BaseURL:     pc.BaseURL,
+			APIKey:      pc.APIKey,
+			Model:       pc.Model,
+			Timeout:     time.Duration(pc.TimeoutSeconds) * time.Second,
+			MaxTokens:   pc.MaxTokens,
+			Temperature: pc.Temperature,
+		}))
+	}
+	return ps
+}
+
+// checkLLM 真实调用一次 LLM（软检查：未配置 key 时跳过）。
+// 调用会产生 llm.chat span 与 ai_* 指标，供 Jaeger/回环验证。
+func (p *prober) checkLLM(ctx context.Context, cfg *config.Config) {
+	providers := llmProvidersFromConfig(cfg)
+	if len(providers) == 0 {
+		p.record("llm", true, true, "未配置可用 provider（设置 LLM_API_KEY 后启用），跳过")
+		return
+	}
+	c, err := llm.NewClient(providers, llm.ClientOptions{})
+	if err != nil {
+		p.record("llm", true, false, "客户端构造失败: %v", err)
+		return
+	}
+	resp, err := c.Chat(ctx, llm.ChatRequest{Messages: []llm.Message{{
+		Role: llm.RoleUser, Content: "连通性自检：请只回复两个字：正常",
+	}}})
+	if err != nil {
+		p.record("llm", true, false, "调用失败: %v", err)
+		return
+	}
+	p.record("llm", true, true, "provider=%s 回复: %q（tokens %d/%d）",
+		resp.Provider, trimRunes(resp.Content, 40), resp.PromptTokens, resp.CompletionTokens)
+}
+
+// trimRunes 截取前 n 个 rune。
+func trimRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
+}
+
+// checkOTLPRoundTrip flush 后从 Jaeger 查回本服务，验证 trace 全链路。
 // 端点不可达时临时 kubectl port-forward（探测结束即回收）。
-func (p *prober) checkOTLPRoundTrip(ctx context.Context, cfg *config.Config) {
+func (p *prober) checkOTLPRoundTrip(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry) {
 	if !cfg.Telemetry.Enabled {
 		p.record("otel-roundtrip", true, true, "telemetry 未启用，跳过")
+		return
+	}
+	if !tel.Enabled() {
+		p.record("otel-roundtrip", false, false, "telemetry 初始化降级（检查 OTLP 端口 %s）", cfg.Telemetry.OTLPEndpoint)
 		return
 	}
 	cleanup, reachable := ensureOTLPEndpoint(cfg.Telemetry.OTLPEndpoint, cfg.Telemetry.PortForwardTarget)
@@ -253,19 +321,12 @@ func (p *prober) checkOTLPRoundTrip(ctx context.Context, cfg *config.Config) {
 			"OTLP %s 不可达且自动 port-forward 失败（手动执行: make pf-otel）", cfg.Telemetry.OTLPEndpoint)
 		return
 	}
-	tel := telemetry.Init(ctx, telemetry.Config{
-		Enabled: cfg.Telemetry.Enabled, ServiceName: cfg.Telemetry.ServiceName,
-		OTLPEndpoint: cfg.Telemetry.OTLPEndpoint, SampleRatio: cfg.Telemetry.SampleRatio,
-	})
-	if !tel.Enabled() {
-		p.record("otel-roundtrip", false, false, "telemetry 初始化降级（检查 OTLP 端口 %s）", cfg.Telemetry.OTLPEndpoint)
-		return
-	}
+
 	tracer := otel.Tracer("aiops/probe")
 	_, span := tracer.Start(ctx, "probe.selfcheck")
 	span.SetAttributes(attribute.String("component", "env-probe"))
 	span.End()
-	tel.Shutdown(context.Background())
+	tel.Shutdown(context.Background()) // flush 全部 span（含 llm.chat）
 
 	url := strings.TrimSuffix(cfg.Jaeger.BaseURL, "/") + "/api/services"
 	var found bool

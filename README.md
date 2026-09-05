@@ -10,15 +10,21 @@
 ## 快速开始
 
 ```bash
-# 1. 环境探测：验证 Prometheus / Jaeger / K8s / Redis / PostgreSQL 可达
+# 1. 环境探测：验证 Prometheus / Jaeger / K8s / Redis / PostgreSQL / OTLP 回环
 make probe
 
-# 2. 启动开发依赖（专用 PostgreSQL/Redis，独立端口不与宿主机既有实例冲突）
+# 2. 启动开发依赖（专用 PostgreSQL:5433 / Redis:6380，独立端口不与宿主机既有实例冲突）
 make devup
 
-# 3. 启动服务（默认 :8090 API，:6060 metrics）
+# 3.（dev 模式可选）trace 上报需要把集群内 Jaeger OTLP 转发到本地 4317
+make pf-otel
+
+# 4. 启动服务（默认 :8090 API，:6060 metrics）
 make run
 ```
+
+> 说明：Go 的解析器不解析 `*.localhost` 子域名（浏览器/curl 可以），pkg/httpx 已内置
+> 拨号映射解决；`LLM_API_KEY` 未配置时 LLM 相关能力自动跳过（probe 中为软检查）。
 
 ## 系统架构（概览）
 

@@ -61,13 +61,20 @@ submitted → intent_classified → investigating ⇄(回环≤3)
 
 各阶段验收标准见开发计划（README「开发路线」与项目简报第 9 节）。
 
-## 环境探测结论（2026-09-05 实测）
+## 环境探测结论（2026-09-05 实测，`aiops probe` 可随时复验）
 
 - Prometheus：ingress `http://prometheus.localhost:8080` 可达，16 target 全 up，
-  `http_requests_total` 存在；NodePort `localhost:30090` 可作兜底地址。
-- Jaeger：UI/API `http://jaeger.localhost:8080` 可达；**OTLP gRPC 走 NodePort
-  `localhost:31661`**（makejob-jaeger service 4317→31661），宿主机可直发 trace。
-- K8s：context `kind-makejob`，PreHire 全部服务在 `default` 命名空间，
+  `http_requests_total` 存在；kind 同时发布了容器端口 → 宿主机 `localhost:9090` 可直连兜底。
+- Jaeger：UI/API `http://jaeger.localhost:8080`（或 `localhost:16686`）可达。
+- **OTLP 上报**：kind 仅向宿主机发布 8080(ingress)/9090/16686/3000(Grafana)，
+  OTLP gRPC（4317）未发布——dev 模式用 `make pf-otel`
+  （`kubectl port-forward svc/makejob-jaeger 4317:4317`），probe 会自动临时
+  port-forward 并在结束后回收；集群内部署时直连 `collector:4317`。
+  已实测：span 成功上报并在 Jaeger 查询 API 中出现（otel-roundtrip OK）。
+- **Go 解析器不解析 `*.localhost`**（浏览器/curl 由系统特殊处理可以）：已用
+  pkg/httpx 的拨号映射（`*.localhost` → 127.0.0.1，Host 头保留）解决，ingress
+  仍按 Host 路由正常工作。
+- K8s：context `kind-makejob`，PreHire 全部服务在 `default` 命名空间（20 pod），
   当前凭证可 get pods / pods/log。
 - 集群随宿主机 Docker Desktop 启动而恢复（节点容器重启后需等待工作负载就绪）。
 - 已知无关问题：makejob-frontend pod CrashLoopBackOff（PreHire 侧问题，不阻塞本项目）。

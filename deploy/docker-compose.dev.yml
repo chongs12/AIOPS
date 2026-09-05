@@ -1,0 +1,37 @@
+# AIOps 开发依赖：PostgreSQL(5433) 与 Redis(6380)。
+# 选用独立端口与专用实例，避免与宿主机既有 my-postgres/my-redis 冲突。
+# 密码经环境变量注入（PG_PASSWORD，默认开发密码仅限本地）。
+services:
+  aiops-postgres:
+    image: postgres:16
+    container_name: aiops-postgres
+    environment:
+      POSTGRES_USER: aiops
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-aiops_dev}
+      POSTGRES_DB: aiops
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - aiops_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiops -d aiops"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  aiops-redis:
+    image: redis:7
+    container_name: aiops-redis
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - aiops_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  aiops_pgdata:
+  aiops_redisdata:
