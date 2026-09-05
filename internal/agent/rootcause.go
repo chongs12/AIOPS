@@ -46,7 +46,7 @@ func (a *RootCauseAgent) Run(ctx context.Context, rc *RunContext) (*Output, erro
 	}
 
 	r := a.toResult(rc.Board, &out)
-	r.NeedMoreQueries = a.sanitizeQueries(out.NeedMoreQueries)
+	r.NeedMoreQueries = a.sanitizeQueries(rc.Board, out.NeedMoreQueries)
 
 	return &Output{Note: a.noteFor(r), Payload: r}, nil
 }
@@ -109,20 +109,40 @@ func (a *RootCauseAgent) toResult(b *evidence.Board, out *rootCauseLLM) *RootCau
 	return r
 }
 
-// sanitizeQueries 剔除不合法的补查请求（未知工具/未知模板，防幻觉调用）。
-func (a *RootCauseAgent) sanitizeQueries(reqs []queryRequestLLM) []QueryRequest {
+// sanitizeQueries 剔除不合法的补查请求（未知工具/未知模板/黑板已有同款查询）。
+// 已执行过的查询不再重复——倒逼模型基于现有证据收敛。
+func (a *RootCauseAgent) sanitizeQueries(b *evidence.Board, reqs []queryRequestLLM) []QueryRequest {
 	var out []QueryRequest
 	for _, q := range reqs {
 		if q.Tool != "prometheus.query" {
 			continue
 		}
 		tpl, _ := q.Input["template"].(string)
-		if _, ok := a.templates.Get(tpl); !ok {
+		t, ok := a.templates.Get(tpl)
+		if !ok {
 			continue
 		}
 		raw, err := json.Marshal(q.Input)
 		if err != nil {
 			continue
+		}
+		// 同模板+同参数的查询已在黑板 → 跳过。
+		params, _ := q.Input["params"].(map[string]any)
+		strParams := make(map[string]string, len(params))
+		for k, v := range params {
+			strParams[k] = fmt.Sprint(v)
+		}
+		if expr, err := a.templates.Render(t, strParams); err == nil {
+			dup := false
+			for _, o := range b.Observations {
+				if o.Query == expr {
+					dup = true
+					break
+				}
+			}
+			if dup {
+				continue
+			}
 		}
 		out = append(out, QueryRequest{Tool: q.Tool, Input: raw, Reason: q.Reason})
 	}

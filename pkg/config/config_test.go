@@ -28,8 +28,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Prometheus.BaseURL != "http://prometheus.localhost:8080" {
 		t.Errorf("Prometheus.BaseURL 默认值 = %q", cfg.Prometheus.BaseURL)
 	}
-	if len(missing) != 0 {
-		t.Errorf("空配置不应有缺失占位符，got %v", missing)
+	// 默认值中的占位符（PG_PASSWORD/LLM_API_KEY）在环境未设置时应被上报。
+	if len(missing) != 2 {
+		t.Errorf("空配置应上报默认占位符缺失, got %v", missing)
 	}
 }
 
@@ -47,8 +48,9 @@ postgres:
 	if cfg.Postgres.DSN != want {
 		t.Errorf("DSN = %q, want %q", cfg.Postgres.DSN, want)
 	}
-	if len(missing) != 0 {
-		t.Errorf("missing = %v, want empty", missing)
+	// LLM_API_KEY 仍缺省（默认 provider），PG_PASSWORD 已注入。
+	if len(missing) != 1 || missing[0] != "LLM_API_KEY" {
+		t.Errorf("missing = %v, want [LLM_API_KEY]", missing)
 	}
 }
 
@@ -63,8 +65,13 @@ llm:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(missing) != 1 || missing[0] != "LLM_API_KEY" {
-		t.Errorf("missing = %v, want [LLM_API_KEY]", missing)
+	// 默认值的 PG_PASSWORD + YAML 里的 LLM_API_KEY 均应上报。
+	found := map[string]bool{}
+	for _, m := range missing {
+		found[m] = true
+	}
+	if !found["LLM_API_KEY"] || !found["PG_PASSWORD"] {
+		t.Errorf("missing = %v, want 含 LLM_API_KEY 与 PG_PASSWORD", missing)
 	}
 }
 

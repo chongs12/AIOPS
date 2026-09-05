@@ -101,19 +101,8 @@ func (l *Lib) Render(t Template, params map[string]string) (string, error) {
 		}
 		filled[p.Name] = v
 	}
-	// 未声明的参数一律拒绝，防注入。
-	for k := range params {
-		declared := false
-		for _, p := range t.Params {
-			if p.Name == k {
-				declared = true
-				break
-			}
-		}
-		if !declared {
-			return "", fmt.Errorf("模板 %s 不接受参数 %s", t.Name, k)
-		}
-	}
+	// 未声明的参数直接丢弃（LLM 常惯性多传 window 等）；表达式只含已声明占位，
+	// 丢弃不产生注入面；声明参数的值已由 pattern 校验。
 	return llm.Render(t.Expr, filled)
 }
 

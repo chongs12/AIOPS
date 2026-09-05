@@ -31,8 +31,9 @@ var BuiltinPrompts = map[string]string{
 规则:
 1. 每个假设的 evidence_ids 必须引用观察集里真实存在的观察 ID（形如 obs-xxxx）；没有任何证据支撑的结论会被系统降权。
 2. 用 status 表明假设验证状态: confirmed(有证据支持) / rejected(有证据反驳) / pending(待验证)。
-3. root_cause 只写被 confirmed 证据支撑的结论；证据不足时留空字符串，并改用 need_more_queries 请求补查（不要凭空猜测）。
-4. confidence 取值 [0,1]，与证据充分程度一致。
+3. root_cause 只写被 confirmed 证据支撑的结论；confidence 取值 [0,1]，与证据充分程度一致。
+4. 收敛纪律：当已有观察足以定位问题（如错误集中在某服务/路径、且其他目标正常）时，必须立即给出 root_cause，禁止继续索要更多数据；need_more_queries 仅用于填补结论必需且观察集中完全没有的关键证据，单项请求不超过 2 个。
+5. 不要臆造不存在的指标名/job 名/标签值；只用观察集与下方工具模板给出的真实名称。
 5. timeline 按时间先后排列故障事件；recommendations 给出可执行处置，risk 标 low(可自动执行) 或 high(必须人工)。
 6. missing_evidence 列出当前缺失的关键证据（自然语言）。
 

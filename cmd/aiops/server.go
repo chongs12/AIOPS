@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"aiops/internal/ticket"
 	"aiops/pkg/telemetry"
 )
 
@@ -35,20 +36,28 @@ func runServe(args []string) error {
 	})
 	defer tel.Shutdown(context.Background())
 
+	a, err := buildApp(ctx, cfg)
+	if err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
+	mux.Handle("/", a.handler)
 
-	api := &http.Server{Addr: cfg.Server.Addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	apiSrv := &http.Server{Addr: cfg.Server.Addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	metrics := &http.Server{Addr: cfg.Server.MetricsAddr, Handler: tel.MetricsHandler()}
 
 	errCh := make(chan error, 2)
 	go func() { errCh <- metrics.ListenAndServe() }()
-	go func() { errCh <- api.ListenAndServe() }()
+	go func() { errCh <- apiSrv.ListenAndServe() }()
 
-	slog.Info("aiops-server 启动", "addr", cfg.Server.Addr, "metrics", cfg.Server.MetricsAddr, "telemetry", tel.Enabled())
+	slog.Info("aiops-server 启动",
+		"addr", cfg.Server.Addr, "metrics", cfg.Server.MetricsAddr,
+		"telemetry", tel.Enabled(), "llm", a.llmEnabled, "store", storeKind(a.store))
 
 	select {
 	case <-ctx.Done():
@@ -56,7 +65,7 @@ func runServe(args []string) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		var errs []error
-		if err := api.Shutdown(shutdownCtx); err != nil {
+		if err := apiSrv.Shutdown(shutdownCtx); err != nil {
 			errs = append(errs, err)
 		}
 		if err := metrics.Shutdown(shutdownCtx); err != nil {
@@ -69,4 +78,16 @@ func runServe(args []string) error {
 		}
 	}
 	return nil
+}
+
+// storeKind 存储实现名（启动日志用）。
+func storeKind(s ticket.Store) string {
+	switch s.(type) {
+	case *ticket.PGStore:
+		return "postgres"
+	case *ticket.MemStore:
+		return "memory(降级)"
+	default:
+		return "unknown"
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"aiops/internal/evidence"
@@ -274,8 +275,9 @@ func nullableTime(t time.Time) any {
 
 // ---- 内存实现（单测用） ----
 
-// MemStore 内存存储，语义与 PGStore 一致。
+// MemStore 内存存储，语义与 PGStore 一致；线程安全（生产降级模式可用）。
 type MemStore struct {
+	mu           sync.RWMutex
 	tickets      map[string]*Ticket
 	messages     map[string][]*Message
 	observations map[string][]*evidence.Observation
@@ -292,12 +294,16 @@ func NewMemStore() *MemStore {
 
 func (m *MemStore) CreateTicket(_ context.Context, t *Ticket) error {
 	cp := *t
+	m.mu.Lock()
 	m.tickets[t.ID] = &cp
+	m.mu.Unlock()
 	return nil
 }
 
 func (m *MemStore) GetTicket(_ context.Context, id string) (*Ticket, error) {
+	m.mu.RLock()
 	t, ok := m.tickets[id]
+	m.mu.RUnlock()
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -306,11 +312,13 @@ func (m *MemStore) GetTicket(_ context.Context, id string) (*Ticket, error) {
 }
 
 func (m *MemStore) ListTickets(_ context.Context, limit int) ([]*Ticket, error) {
-	var out []*Ticket
+	m.mu.RLock()
+	out := make([]*Ticket, 0, len(m.tickets))
 	for _, t := range m.tickets {
 		cp := *t
 		out = append(out, &cp)
 	}
+	m.mu.RUnlock()
 	// 简化：不排序，测试用例少。
 	if len(out) > limit {
 		out = out[:limit]
@@ -319,45 +327,56 @@ func (m *MemStore) ListTickets(_ context.Context, limit int) ([]*Ticket, error) 
 }
 
 func (m *MemStore) UpdateTicket(_ context.Context, t *Ticket) error {
+	cp := *t
+	m.mu.Lock()
 	if _, ok := m.tickets[t.ID]; !ok {
+		m.mu.Unlock()
 		return ErrNotFound
 	}
-	cp := *t
 	m.tickets[t.ID] = &cp
+	m.mu.Unlock()
 	return nil
 }
 
 func (m *MemStore) AppendMessage(_ context.Context, ticketID string, msg *Message) error {
-	msg.Seq = len(m.messages[ticketID]) + 1
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now()
 	}
+	m.mu.Lock()
+	msg.Seq = len(m.messages[ticketID]) + 1
 	m.messages[ticketID] = append(m.messages[ticketID], msg)
+	m.mu.Unlock()
 	return nil
 }
 
 func (m *MemStore) ListMessages(_ context.Context, ticketID string) ([]*Message, error) {
+	m.mu.RLock()
 	out := m.messages[ticketID]
 	cps := make([]*Message, 0, len(out))
 	for _, msg := range out {
 		cp := *msg
 		cps = append(cps, &cp)
 	}
+	m.mu.RUnlock()
 	return cps, nil
 }
 
 func (m *MemStore) SaveObservation(_ context.Context, ticketID string, o *evidence.Observation) error {
 	cp := *o
+	m.mu.Lock()
 	m.observations[ticketID] = append(m.observations[ticketID], &cp)
+	m.mu.Unlock()
 	return nil
 }
 
 func (m *MemStore) ListObservations(_ context.Context, ticketID string) ([]*evidence.Observation, error) {
+	m.mu.RLock()
 	out := m.observations[ticketID]
 	cps := make([]*evidence.Observation, 0, len(out))
 	for _, o := range out {
 		cp := *o
 		cps = append(cps, &cp)
 	}
+	m.mu.RUnlock()
 	return cps, nil
 }

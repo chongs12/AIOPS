@@ -51,9 +51,10 @@ func TestLibRenderRejectsInjection(t *testing.T) {
 	if _, err := lib.Render(tpl, map[string]string{"window": "5m\"} or vector(1)"}); err == nil {
 		t.Fatal("非法 window 应被 pattern 拒绝")
 	}
-	// 未声明参数 → 拒绝。
-	if _, err := lib.Render(tpl, map[string]string{"evil": "1"}); err == nil {
-		t.Fatal("未声明参数应被拒绝")
+	// 未声明参数 → 丢弃（表达式只含已声明占位，注入面不放大）。
+	expr, err := lib.Render(tpl, map[string]string{"evil": "1"})
+	if err != nil || expr != `sum(rate(http_requests_total{code=~"5.."}[5m]))` {
+		t.Errorf("未声明参数应被丢弃: %s %v", expr, err)
 	}
 }
 

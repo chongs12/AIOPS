@@ -154,37 +154,58 @@ func Default() *Config {
 
 var placeholderRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
-// Load 读取 YAML 配置：先做 ${VAR} 占位解析，再应用 AIOPS_ 前缀环境变量覆盖。
+// Load 读取 YAML 配置：占位符解析在结构体层统一进行（覆盖 YAML 值与
+// Go 代码默认值两条来源），随后应用 AIOPS_ 前缀环境变量覆盖。
 // 返回的 missing 为环境中缺失的占位变量名（不阻塞启动，由调用方决定是否告警）。
 func Load(path string) (*Config, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("读取配置文件 %s: %w", path, err)
 	}
-	resolved, missing := resolvePlaceholders(string(data))
 
 	cfg := Default()
-	if err := yaml.Unmarshal([]byte(resolved), cfg); err != nil {
-		return nil, missing, fmt.Errorf("解析 YAML: %w", err)
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, nil, fmt.Errorf("解析 YAML: %w", err)
 	}
 	if err := applyEnvOverrides(cfg); err != nil {
-		return nil, missing, fmt.Errorf("环境变量覆盖: %w", err)
+		return nil, nil, fmt.Errorf("环境变量覆盖: %w", err)
 	}
+
+	var missing []string
+	resolveStructPlaceholders(reflect.ValueOf(cfg).Elem(), &missing)
 	return cfg, missing, nil
 }
 
-// resolvePlaceholders 将 ${VAR} 替换为环境变量值；缺失的记录到 missing 并置空。
-func resolvePlaceholders(s string) (string, []string) {
-	var missing []string
-	out := placeholderRe.ReplaceAllStringFunc(s, func(m string) string {
-		name := m[2 : len(m)-1]
-		if v, ok := os.LookupEnv(name); ok {
-			return v
+// resolveStructPlaceholders 递归解析结构体内所有字符串字段的 ${VAR} 占位。
+// 缺失的环境变量置空并记录（切片内的结构体同样处理，覆盖 LLM providers 等）。
+func resolveStructPlaceholders(v reflect.Value, missing *[]string) {
+	switch v.Kind() {
+	case reflect.Struct:
+		t := v.Type()
+		for i := 0; i < t.NumField(); i++ {
+			if t.Field(i).Tag.Get("yaml") == "-" {
+				continue
+			}
+			resolveStructPlaceholders(v.Field(i), missing)
 		}
-		missing = append(missing, name)
-		return ""
-	})
-	return out, missing
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			resolveStructPlaceholders(v.Index(i), missing)
+		}
+	case reflect.String:
+		s := v.String()
+		if strings.Contains(s, "${") {
+			resolved := placeholderRe.ReplaceAllStringFunc(s, func(m string) string {
+				name := m[2 : len(m)-1]
+				if val, ok := os.LookupEnv(name); ok {
+					return val
+				}
+				*missing = append(*missing, name)
+				return ""
+			})
+			v.SetString(resolved)
+		}
+	}
 }
 
 // applyEnvOverrides 递归遍历结构体，对带 env 标签的叶字段应用 AIOPS_ 前缀覆盖。
