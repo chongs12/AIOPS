@@ -1,0 +1,25 @@
+# 构建产物
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# 依赖
+node_modules/
+
+# 本地环境与密钥（仓库零明文凭证）
+.env
+.env.*
+configs/config.local.yaml
+
+# 前端
+web/dist/
+web/node_modules/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
