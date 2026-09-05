@@ -27,18 +27,26 @@ const (
 
 // Ticket 工单聚合根。
 type Ticket struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Content   string    `json:"content"`
-	Reporter  string    `json:"reporter"`
-	Type      string    `json:"type"`
-	Status    string    `json:"status"`
-	Entities  Entities  `json:"entities"`
-	TraceID   string    `json:"trace_id,omitempty"` // 一次处理 = 一条 trace
-	Report    *Report   `json:"report,omitempty"`
-	Error     string    `json:"error,omitempty"` // failed 时的原因
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string       `json:"id"`
+	Title     string       `json:"title"`
+	Content   string       `json:"content"`
+	Reporter  string       `json:"reporter"`
+	Type      string       `json:"type"`
+	Status    string       `json:"status"`
+	Entities  Entities     `json:"entities"`
+	TraceID   string       `json:"trace_id,omitempty"` // 一次处理 = 一条 trace
+	Report    *Report      `json:"report,omitempty"`
+	Error     string       `json:"error,omitempty"`   // failed 时的原因
+	Pending   *PendingInfo `json:"pending,omitempty"` // awaiting_info 挂起信息
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
+}
+
+// PendingInfo HITL 挂起信息：awaiting_info 状态下等待用户补充的内容。
+type PendingInfo struct {
+	Questions []string  `json:"questions"`
+	Round     int       `json:"round"`
+	AskedAt   time.Time `json:"asked_at"`
 }
 
 // Entities 意图识别抽取的实体。

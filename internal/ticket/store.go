@@ -53,6 +53,9 @@ type PGStore struct {
 	db *sql.DB
 }
 
+// DB 暴露底层连接（案例库/审计复用同一连接）。
+func (s *PGStore) DB() *sql.DB { return s.db }
+
 // NewPGStore 构造并执行建表迁移（幂等）。
 func NewPGStore(ctx context.Context, db *sql.DB) (*PGStore, error) {
 	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
@@ -97,27 +100,28 @@ CREATE TABLE IF NOT EXISTS ticket_observations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets (created_at DESC);
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pending JSONB;
 `
 
-const ticketCols = `id, title, content, reporter, type, status, entities, trace_id, report, error, created_at, updated_at`
+const ticketCols = `id, title, content, reporter, type, status, entities, trace_id, report, pending, error, created_at, updated_at`
 
 func (s *PGStore) CreateTicket(ctx context.Context, t *Ticket) error {
 	ent, err := json.Marshal(t.Entities)
 	if err != nil {
 		return err
 	}
-	var report any
-	if t.Report != nil {
-		r, err := json.Marshal(t.Report)
-		if err != nil {
-			return err
-		}
-		report = r
+	report, err := nullableJSON(t.Report)
+	if err != nil {
+		return err
+	}
+	pending, err := nullableJSON(t.Pending)
+	if err != nil {
+		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
-INSERT INTO tickets (id, title, content, reporter, type, status, entities, trace_id, report, error, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, t.Error, t.CreatedAt, t.UpdatedAt)
+INSERT INTO tickets (id, title, content, reporter, type, status, entities, trace_id, report, pending, error, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Error, t.CreatedAt, t.UpdatedAt)
 	return err
 }
 
@@ -152,20 +156,20 @@ func (s *PGStore) UpdateTicket(ctx context.Context, t *Ticket) error {
 	if err != nil {
 		return err
 	}
-	var report any
-	if t.Report != nil {
-		r, err := json.Marshal(t.Report)
-		if err != nil {
-			return err
-		}
-		report = r
-	}
 	t.UpdatedAt = time.Now()
+	report, err := nullableJSON(t.Report)
+	if err != nil {
+		return err
+	}
+	pending, err := nullableJSON(t.Pending)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `
 UPDATE tickets SET title=$2, content=$3, reporter=$4, type=$5, status=$6, entities=$7,
-                   trace_id=$8, report=$9, error=$10, updated_at=$11
+                   trace_id=$8, report=$9, pending=$10, error=$11, updated_at=$12
 WHERE id=$1`,
-		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, t.Error, t.UpdatedAt)
+		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Error, t.UpdatedAt)
 	return err
 }
 
@@ -173,10 +177,10 @@ WHERE id=$1`,
 func scanTicket(scan func(dest ...any) error) (*Ticket, error) {
 	var t Ticket
 	var ent, traceID []byte
-	var report []byte
+	var report, pending []byte
 	var createdAt, updatedAt time.Time
 	if err := scan(&t.ID, &t.Title, &t.Content, &t.Reporter, &t.Type, &t.Status,
-		&ent, &traceID, &report, &t.Error, &createdAt, &updatedAt); err != nil {
+		&ent, &traceID, &report, &pending, &t.Error, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -190,6 +194,12 @@ func scanTicket(scan func(dest ...any) error) (*Ticket, error) {
 		var r Report
 		if err := json.Unmarshal(report, &r); err == nil {
 			t.Report = &r
+		}
+	}
+	if len(pending) > 0 {
+		var pi PendingInfo
+		if err := json.Unmarshal(pending, &pi); err == nil {
+			t.Pending = &pi
 		}
 	}
 	t.CreatedAt, t.UpdatedAt = createdAt, updatedAt
@@ -264,6 +274,18 @@ FROM ticket_observations WHERE ticket_id=$1 ORDER BY created_at`, ticketID)
 		out = append(out, &o)
 	}
 	return out, rows.Err()
+}
+
+// nullableJSON 序列化为 JSONB 参数；nil → NULL。
+func nullableJSON(v any) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 func nullableTime(t time.Time) any {

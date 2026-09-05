@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config 遥测配置（由 pkg/config.Telemetry 映射而来）。
@@ -135,6 +136,9 @@ func (t *Telemetry) MetricsHandler() http.Handler {
 	}
 	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 }
+
+// Tracer 返回命名 tracer（包外使用统一入口）。
+func Tracer(name string) trace.Tracer { return otel.Tracer(name) }
 
 // Enabled 报告遥测是否实际启用。
 func (t *Telemetry) Enabled() bool { return t != nil && t.enabled }

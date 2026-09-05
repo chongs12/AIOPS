@@ -24,6 +24,7 @@ func NewAll(d Deps) map[string]Agent {
 	return map[string]Agent{
 		NameIntent:    NewIntentAgent(),
 		NameMetrics:   NewMetricsAgent(),
+		NameLog:       NewLogAgent(),
 		NameRootCause: NewRootCauseAgent(d.Templates),
 		NameReply:     NewReplyAgent(),
 	}

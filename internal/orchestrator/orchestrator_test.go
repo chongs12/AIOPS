@@ -351,3 +351,99 @@ func msgSummary(t *testing.T, s ticket.Store, id string) []string {
 	}
 	return out
 }
+
+const intentNeedMore = `{"type":"5xx_surge","service":"question","window_minutes":0,"need_more_info":true,
+ "questions":["故障大约从什么时间开始？","影响哪些接口？"],"reason":"缺少时间窗"}`
+
+// newHITLLLM 意图首轮要求追问；根因步骤回填真实观察 ID。
+func newHITLLLM(t *testing.T) *llm.Client {
+	var mu sync.Mutex
+	intentCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Content string
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		content := ""
+		if len(body.Messages) > 0 {
+			content = body.Messages[len(body.Messages)-1].Content
+		}
+		reply := `{}`
+		switch {
+		case strings.Contains(content, "意图识别专家"):
+			mu.Lock()
+			i := intentCalls
+			intentCalls++
+			mu.Unlock()
+			if i == 0 {
+				reply = intentNeedMore // 首轮：信息不全 → 追问
+			} else {
+				reply = intentReply // 兜底（续跑不经过意图）
+			}
+		case strings.Contains(content, "根因分析专家"):
+			reply = strings.ReplaceAll(rcaOK, "@OBS", firstObsID(content))
+		case strings.Contains(content, "事故报告撰写专家"):
+			reply = `{"summary":"补充信息后定位完成。","citations":[]}`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"content": reply}}},
+			"usage":   map[string]any{"prompt_tokens": 10, "completion_tokens": 10},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	c, err := llm.NewClient([]llm.Provider{
+		llm.NewOpenAIProvider(llm.OpenAIOptions{Name: "fake", BaseURL: srv.URL, APIKey: "k", Model: "m"}),
+	}, llm.ClientOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestProcessHITLSuspendAndResume(t *testing.T) {
+	tools := &scriptTools{items: []*tool.Result{{
+		Status:   tool.StatusOK,
+		Data:     json.RawMessage(okVector),
+		Evidence: tool.EvidenceMeta{Source: "prometheus", Query: `sum(rate(http_requests_total{code=~"5.."}[5m]))`},
+	}}}
+	store := ticket.NewMemStore()
+	// 动态 LLM：首次意图 → 追问；根因 → 回填真实观察 ID 的结论；报告 → 固定。
+	llmc2 := newHITLLLM(t)
+	o2 := New(Options{Store: store, Agents: agent.NewAll(agent.Deps{LLM: llmc2}), Tools: tools, LLM: llmc2})
+
+	tk := ticket.New("接口 5xx 突增", "gateway 出现大量 5xx", "oncall")
+	if err := store.CreateTicket(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
+
+	// 第一轮：信息不全 → awaiting_info 挂起。
+	if err := o2.Process(context.Background(), tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.GetTicket(context.Background(), tk.ID)
+	if got.Status != ticket.StatusAwaitingInfo {
+		t.Fatalf("应挂起等待补充: %s（%s）", got.Status, got.Error)
+	}
+	if got.Pending == nil || len(got.Pending.Questions) != 2 {
+		t.Fatalf("应记录追问: %+v", got.Pending)
+	}
+
+	// 用户回复：内容合并、状态回 investigating、断点续跑（跳过意图）。
+	got.Content += "\n[补充回复] 大约 30 分钟前开始，影响全部接口。"
+	got.Pending = nil
+	got.Status = ticket.StatusInvestigating
+	_ = store.UpdateTicket(context.Background(), got)
+	if err := o2.Resume(context.Background(), tk.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	final, _ := store.GetTicket(context.Background(), tk.ID)
+	if final.Status != ticket.StatusResolved {
+		t.Fatalf("续跑后应解决: %s（%s）", final.Status, final.Error)
+	}
+	if final.Report == nil {
+		t.Fatal("应有报告")
+	}
+}

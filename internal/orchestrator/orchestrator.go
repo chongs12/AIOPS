@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"aiops/internal/agent"
+	"aiops/internal/cases"
 	"aiops/internal/evidence"
 	"aiops/internal/ticket"
 	"aiops/pkg/llm"
@@ -22,6 +24,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// CaseStore 案例库能力（M5：相似召回 + 已解决沉淀）。
+type CaseStore interface {
+	Save(ctx context.Context, c *cases.Case) error
+	Search(ctx context.Context, query string, topK int) ([]cases.Scored, error)
+	Backend() string
+}
+
 // Orchestrator 编排引擎。
 type Orchestrator struct {
 	store      ticket.Store
@@ -29,6 +38,7 @@ type Orchestrator struct {
 	tools      agent.ToolExecutor
 	llm        *llm.Client
 	prompts    llm.TemplateStore
+	cases      CaseStore
 	maxRounds  int
 	confThresh float64
 	tracer     trace.Tracer
@@ -43,6 +53,7 @@ type Options struct {
 	Prompts             llm.TemplateStore // nil = 内置
 	MaxRounds           int               // 根因补查回环上限，默认 3
 	ConfidenceThreshold float64           // 低于则转人工，默认 0.6
+	CaseStore           CaseStore         // 可 nil
 }
 
 // New 构造编排器。
@@ -58,7 +69,7 @@ func New(opts Options) *Orchestrator {
 	}
 	return &Orchestrator{
 		store: opts.Store, agents: opts.Agents, tools: opts.Tools,
-		llm: opts.LLM, prompts: opts.Prompts,
+		llm: opts.LLM, prompts: opts.Prompts, cases: opts.CaseStore,
 		maxRounds: opts.MaxRounds, confThresh: opts.ConfidenceThreshold,
 		tracer: otel.Tracer("aiops/internal/orchestrator"),
 	}
@@ -67,8 +78,20 @@ func New(opts Options) *Orchestrator {
 // Process 同步处理一个工单（API 层负责异步调用；M2 换 pkg/async 任务状态机）。
 // 契约：除 ctx 取消外，任何内部错误都不向上抛——工单转 failed 并落库原因。
 func (o *Orchestrator) Process(ctx context.Context, ticketID string) error {
+	return o.process(ctx, ticketID, false)
+}
+
+// Resume 从断点续跑：用户补充信息后跳过意图识别，直接进入检索与推理阶段。
+func (o *Orchestrator) Resume(ctx context.Context, ticketID string) error {
+	return o.process(ctx, ticketID, true)
+}
+
+func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent bool) error {
 	ctx, span := o.tracer.Start(ctx, "orchestrator.process",
-		trace.WithAttributes(attribute.String("ticket.id", ticketID)))
+		trace.WithAttributes(
+			attribute.String("ticket.id", ticketID),
+			attribute.Bool("resume", skipIntent),
+		))
 	defer span.End()
 
 	defer func() {
@@ -88,7 +111,13 @@ func (o *Orchestrator) Process(ctx context.Context, ticketID string) error {
 	if err != nil {
 		return fmt.Errorf("加载工单: %w", err)
 	}
-	if tk.Status != ticket.StatusSubmitted {
+	// 断点续跑：awaiting_info 状态由 API 层转为 investigating 后从意图之后继续；
+	// 全新工单必须为 submitted。
+	if skipIntent {
+		if tk.Status != ticket.StatusInvestigating {
+			return fmt.Errorf("工单 %s 状态为 %s，不可续跑", ticketID, tk.Status)
+		}
+	} else if tk.Status != ticket.StatusSubmitted {
 		return fmt.Errorf("工单 %s 状态为 %s，不可处理", ticketID, tk.Status)
 	}
 
@@ -104,15 +133,43 @@ func (o *Orchestrator) Process(ctx context.Context, ticketID string) error {
 	board := evidence.NewBoard()
 	saved := map[string]bool{} // 已落库的观察
 
-	// 1. 意图识别。
-	intentOut, err := o.runAgent(ctx, tk, board, agent.NameIntent)
-	if err != nil {
-		return o.failStep(ctx, tk, "意图识别失败: "+err.Error())
+	// 1. 意图识别（断点续跑时跳过——实体已在挂起前抽取）。
+	if !skipIntent {
+		intentOut, err := o.runAgent(ctx, tk, board, agent.NameIntent)
+		if err != nil {
+			return o.failStep(ctx, tk, "意图识别失败: "+err.Error())
+		}
+		intent := intentOut.Payload.(*agent.IntentResult)
+		o.applyIntent(tk, intent)
+		if err := o.store.UpdateTicket(ctx, tk); err != nil {
+			return err
+		}
+
+		// HITL：信息不全 → 挂起等补充（一等状态，断点已持久化）。
+		if intent.NeedMoreInfo && len(intent.Questions) > 0 && tk.Pending == nil {
+			tk.Status = ticket.StatusAwaitingInfo
+			tk.Pending = &ticket.PendingInfo{Questions: intent.Questions, Round: 1, AskedAt: time.Now()}
+			if err := o.store.UpdateTicket(ctx, tk); err != nil {
+				return err
+			}
+			o.appendMsg(ctx, tk.ID, "agent", agent.NameIntent,
+				"需要补充信息：\n- "+strings.Join(intent.Questions, "\n- "))
+			span.SetAttributes(attribute.String("ticket.outcome", "awaiting_info"))
+			return nil
+		}
 	}
-	intent := intentOut.Payload.(*agent.IntentResult)
-	o.applyIntent(tk, intent)
-	if err := o.store.UpdateTicket(ctx, tk); err != nil {
-		return err
+
+	// 1.5 相似历史案例召回（M5）：进黑板供根因参考。
+	if o.cases != nil {
+		if scores, err := o.cases.Search(ctx, tk.Title+" "+tk.Content, 3); err == nil &&
+			len(scores) > 0 && scores[0].Score >= 0.35 {
+			board.AddObservation(evidence.Observation{
+				Source:  "cases.search",
+				Query:   "similar resolved cases",
+				Status:  "ok",
+				Summary: summarizeCases(scores),
+			})
+		}
 	}
 
 	// 2. 指标检索。
@@ -158,7 +215,47 @@ func (o *Orchestrator) Process(ctx context.Context, ticketID string) error {
 		attribute.String("ticket.outcome", "resolved"),
 		attribute.Float64("rca.confidence", rca.Confidence),
 	)
+
+	// 案例沉淀（M5）：已解决工单异步入库，供后续相似召回。
+	if o.cases != nil {
+		c := &cases.Case{
+			TicketID: tk.ID, Type: tk.Type, Service: tk.Entities.Service,
+			RootCause: tk.Report.RootCause, Summary: tk.Report.Summary, CreatedAt: time.Now(),
+		}
+		go func() {
+			sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := o.cases.Save(sctx, c); err != nil {
+				slog.Warn("案例沉淀失败", "ticket", tk.ID, "err", err)
+			}
+		}()
+	}
 	return nil
+}
+
+// summarizeCases 案例召回摘要（供黑板与 LLM）。
+func summarizeCases(scores []cases.Scored) string {
+	var parts []string
+	for i, s := range scores {
+		if i >= 3 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s[类型=%s 相似度=%.2f] 根因: %s",
+			s.TicketID, s.Type, s.Score, firstRunes(s.RootCause, 80)))
+	}
+	if len(parts) == 0 {
+		return "无相似历史案例"
+	}
+	return "相似历史案例：" + strings.Join(parts, "；")
+}
+
+// firstRunes 取前 n 个 rune。
+func firstRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
 }
 
 // rootCauseLoop 根因推理回环：证据不足 → 执行补查 → 再推理，上限 maxRounds。

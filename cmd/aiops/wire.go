@@ -10,9 +10,12 @@ import (
 
 	"aiops/internal/agent"
 	"aiops/internal/api"
+	"aiops/internal/audit"
+	"aiops/internal/cases"
 	"aiops/internal/orchestrator"
 	"aiops/internal/ticket"
 	"aiops/internal/tool"
+	"aiops/internal/tool/k8stool"
 	"aiops/internal/tool/promtool"
 	"aiops/pkg/cache"
 	"aiops/pkg/config"
@@ -21,22 +24,25 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
+	kubernetes "k8s.io/client-go/kubernetes"
 )
 
 // app 装配完成的全部运行时依赖。
 type app struct {
-	store      ticket.Store
-	handler    http.Handler
-	llmEnabled bool
+	store       ticket.Store
+	handler     http.Handler
+	llmEnabled  bool
+	caseBackend string
 }
 
-// buildApp 按依赖顺序装配：存储 → 缓存/限流 → LLM → 工具层 → Agent → 编排 → API。
-// 基础设施故障按各自降级语义处理（内存存储/无 L2/无 LLM 显式告警），绝不阻塞启动。
+// buildApp 按依赖顺序装配：存储 → 缓存/限流 → LLM → 工具层 → 案例库/审计/管理面
+// → Agent → 编排 → API。基础设施故障按各自降级语义处理，绝不阻塞启动。
 func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	a := &app{}
 
 	// 存储：PG 优先，不可达降级内存存储（重启丢数据，显式告警）。
-	a.store, _ = buildStore(ctx, cfg)
+	var db *sql.DB
+	a.store, db = buildStore(ctx, cfg)
 
 	// Redis：可达则作为缓存 L2 与限流后端；不可达均降级（fail-open / 仅 L1）。
 	rdb := buildRedis(ctx, cfg)
@@ -61,17 +67,78 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	if err := reg.Register(promtool.NewQueryTool(promClient, promtool.BuiltinLib())); err != nil {
 		return nil, err
 	}
+	// K8s 工具（日志/事件/Pod 状态只读 + 扩缩容/回滚变更类）。失败不阻塞启动。
+	if k8sBase, err := buildK8sBase(cfg); err == nil {
+		for _, t := range k8stool.NewReadTools(k8sBase) {
+			if err := reg.Register(t); err != nil {
+				return nil, err
+			}
+		}
+		for _, t := range k8stool.NewMutatingTools(k8sBase) {
+			if err := reg.Register(t); err != nil {
+				return nil, err
+			}
+		}
+		slog.Info("K8s 工具就绪", "namespace", cfg.K8s.Namespace)
+	} else {
+		slog.Warn("K8s 客户端构建失败，K8s 工具不可用", "err", err)
+	}
+
+	// 审计（M3）：PG 可用则落库，否则 noop。
+	var auditor tool.Auditor = tool.NoopAuditor{}
+	var auditReader api.AuditReader
+	if db != nil {
+		pgAudit, err := audit.New(ctx, db)
+		if err == nil {
+			auditor = pgAudit
+			auditReader = pgAudit
+		} else {
+			slog.Warn("审计存储迁移失败，降级 noop", "err", err)
+		}
+	}
+
 	executor := tool.NewExecutor(tool.ExecutorDeps{
-		Registry: reg, Limiter: limiter, Cache: appCache, Auditor: tool.NoopAuditor{},
+		Registry: reg, Limiter: limiter, Cache: appCache, Auditor: auditor,
 	})
+
+	// 案例库（M5）：Milvus 优先，PG 兜底；无 PG 则不启用。
+	var caseStore orchestrator.CaseStore
+	if db != nil {
+		pgCases, err := cases.NewPG(ctx, db)
+		if err != nil {
+			slog.Warn("案例库 PG 迁移失败", "err", err)
+		} else if ms, errM := cases.NewMilvus(ctx, cfg.CaseStore.MilvusAddr, pgCases); errM == nil {
+			caseStore = ms
+		} else {
+			caseStore = pgCases
+			slog.Warn("Milvus 不可用，案例库降级 PG", "err", errM)
+		}
+	}
+	if caseStore != nil {
+		a.caseBackend = caseStore.Backend()
+	}
+
+	// Prompt 热更新仓库（M4）：需 PG；失败降级内置。
+	var promptAdmin api.PromptAdmin
+	if db != nil {
+		if ps, err := agent.NewDBPromptStore(ctx, db, rdb); err == nil {
+			promptAdmin = ps
+			slog.Info("Prompt 热更新仓库就绪（≤5s 生效）")
+		} else {
+			slog.Warn("Prompt 外置失败，使用内置模板", "err", err)
+		}
+	}
 
 	// Agent + 编排。
 	agents := agent.NewAll(agent.Deps{LLM: llmc})
 	orch := orchestrator.New(orchestrator.Options{
-		Store: a.store, Agents: agents, Tools: executor, LLM: llmc,
+		Store: a.store, Agents: agents, Tools: executor, LLM: llmc, CaseStore: caseStore,
 	})
 
-	a.handler = api.NewServer(a.store, orch, cfg.Jaeger.BaseURL).Handler()
+	srv := api.NewServer(a.store, orch, cfg.Jaeger.BaseURL)
+	srv.WithTools(executor, auditReader)
+	srv.WithAdmin(promptAdmin, caseStore)
+	a.handler = srv.Handler()
 	return a, nil
 }
 
@@ -86,7 +153,7 @@ func buildStore(ctx context.Context, cfg *config.Config) (ticket.Store, *sql.DB)
 	if err == nil {
 		s, err := ticket.NewPGStore(ctx, db)
 		if err == nil {
-			slog.Info("PostgreSQL 就绪", "dsn_host", hostOf(cfg.Postgres.DSN))
+			slog.Info("PostgreSQL 就绪", "host", hostOf(cfg.Postgres.DSN))
 			return s, db
 		}
 		slog.Warn("ticket 建表失败，降级内存存储", "err", err)
@@ -135,6 +202,24 @@ func buildLLM(cfg *config.Config) *llm.Client {
 	}
 	slog.Info("LLM provider 链就绪", "chain", c.ProviderNames())
 	return c
+}
+
+// buildK8sBase 构造 K8s 工具依赖（复用 probe 的 kubeconfig 加载逻辑）。
+func buildK8sBase(cfg *config.Config) (k8stool.Base, error) {
+	rc, err := k8sRestConfig(cfg.K8s.Kubeconfig)
+	if err != nil {
+		return k8stool.Base{}, err
+	}
+	rc.Timeout = time.Duration(cfg.K8s.TimeoutSeconds) * time.Second
+	cs, err := kubernetes.NewForConfig(rc)
+	if err != nil {
+		return k8stool.Base{}, err
+	}
+	return k8stool.Base{
+		Client:    cs,
+		Namespace: cfg.K8s.Namespace,
+		Timeout:   time.Duration(cfg.K8s.TimeoutSeconds) * time.Second,
+	}, nil
 }
 
 // hostOf 从 DSN 提取主机地址（日志脱敏用，绝不输出凭证）。

@@ -47,6 +47,9 @@ cache:
 ratelimit:
   redis_timeout_ms: 100   # 限流判定总超时，绝不比业务慢
 
+case_store:
+  milvus_addr: localhost:19530   # 案例库向量检索（不可达时降级 PG）
+
 llm:
   providers:
     - name: glm

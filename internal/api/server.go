@@ -2,20 +2,38 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"aiops/internal/orchestrator"
 	"aiops/internal/ticket"
+	"aiops/internal/tool"
+	"aiops/web"
 
 	"github.com/gin-gonic/gin"
 )
 
+// ToolExecutor 工具执行入口（处置动作用，与 agent.ToolExecutor 同形）。
+type ToolExecutor interface {
+	Execute(ctx context.Context, ticketID, toolName string, input json.RawMessage) (*tool.Result, error)
+}
+
+// AuditReader 审计查询（PG 实现提供；内存模式为 nil）。
+type AuditReader interface {
+	ListByTicket(ctx context.Context, ticketID string) ([]*tool.AuditEntry, error)
+}
+
 // Server HTTP 服务。
 type Server struct {
-	store ticket.Store
-	orch  *orchestrator.Orchestrator
-	jbase string // Jaeger 查询页基地址（trace 链接）
+	store      ticket.Store
+	orch       *orchestrator.Orchestrator
+	tools      ToolExecutor // 处置动作执行
+	audit      AuditReader  // 审计查询（可 nil）
+	prompts    PromptAdmin  // prompt 热更新（可 nil）
+	caseSearch CaseSearch   // 案例检索（可 nil）
+	jbase      string       // Jaeger 查询页基地址（trace 链接）
 }
 
 // NewServer 构造。
@@ -24,11 +42,32 @@ func NewServer(store ticket.Store, orch *orchestrator.Orchestrator, jaegerBaseUR
 	return &Server{store: store, orch: orch, jbase: jaegerBaseURL}
 }
 
+// WithTools 注入工具执行器与审计查询（M3 处置闭环）。
+func (s *Server) WithTools(t ToolExecutor, a AuditReader) *Server {
+	s.tools = t
+	s.audit = a
+	return s
+}
+
 // Handler 返回路由。
 func (s *Server) Handler() http.Handler {
 	r := gin.New()
 	r.Use(gin.Recovery(), requestLog())
 	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+
+	// 聊天式工单页（内嵌单页应用）。
+	r.NoRoute(func(c *gin.Context) {
+		if c.Request.URL.Path != "/" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		data, err := web.Static.ReadFile("static/index.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "page missing")
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+	})
 
 	v1 := r.Group("/api/v1")
 	{
@@ -37,6 +76,16 @@ func (s *Server) Handler() http.Handler {
 		v1.GET("/tickets/:id", s.getTicket)
 		v1.GET("/tickets/:id/messages", s.listMessages)
 		v1.GET("/tickets/:id/observations", s.listObservations)
+		v1.POST("/tickets/:id/reply", s.replyTicket)    // HITL：补充信息，断点续跑
+		v1.GET("/tickets/:id/stream", s.streamTicket)   // SSE 推流
+		v1.POST("/tickets/:id/actions", s.actionTicket) // 处置动作（白名单+人工确认）
+		v1.GET("/tickets/:id/audit", s.listAudit)       // 审计记录
+		admin := v1.Group("/admin")
+		{
+			admin.GET("/prompts", s.listPrompts)
+			admin.PUT("/prompts/:scene", s.updatePrompt)
+		}
+		v1.GET("/cases/search", s.searchCases) // M5 相似案例检索
 	}
 	return r
 }

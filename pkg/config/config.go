@@ -26,8 +26,14 @@ type Config struct {
 	Postgres   Postgres   `yaml:"postgres" env:"POSTGRES"`
 	Redis      Redis      `yaml:"redis" env:"REDIS"`
 	Cache      Cache      `yaml:"cache" env:"CACHE"`
-	RateLimit  RateLimit  `yaml:"ratelimit" env:"RATELIMIT"`
-	LLM        LLM        `yaml:"llm" env:"LLM"`
+	RateLimit  RateLimit      `yaml:"ratelimit" env:"RATELIMIT"`
+	LLM        LLM            `yaml:"llm" env:"LLM"`
+	CaseStore  CaseStoreCfg   `yaml:"case_store" env:"CASESTORE"`
+}
+
+// CaseStoreCfg 案例库配置（Milvus 优先，不可达降级 PG）。
+type CaseStoreCfg struct {
+	MilvusAddr string `yaml:"milvus_addr" env:"MILVUS_ADDR"`
 }
 
 // Server HTTP 服务监听地址。
@@ -137,6 +143,7 @@ func Default() *Config {
 		},
 		Cache:     Cache{L1Size: 1024, L1TTLSeconds: 30, L2TTLSeconds: 300, NegativeTTLSeconds: 30},
 		RateLimit: RateLimit{RedisTimeoutMS: 100},
+		CaseStore: CaseStoreCfg{MilvusAddr: "localhost:19530"},
 		LLM: LLM{
 			Providers: []LLMProvider{{
 				Name:           "glm",
