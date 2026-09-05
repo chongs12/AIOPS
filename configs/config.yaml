@@ -1,0 +1,64 @@
+# AIOps 服务配置。
+# 敏感值一律使用形如 ${PG_PASSWORD} 的环境占位（启动时注入，仓库零明文凭证）；
+# 任意标量字段可被 AIOPS_ 前缀环境变量覆盖（如 AIOPS_PROMETHEUS_BASE_URL）。
+
+server:
+  addr: ":8090"            # HTTP API
+  metrics_addr: ":6060"    # /metrics
+
+telemetry:
+  enabled: true
+  service_name: aiops
+  otlp_endpoint: localhost:4317   # dev 模式需 make pf-otel；集群内部署时改为 collector:4317
+  sample_ratio: 1.0
+  port_forward_target: svc/makejob-jaeger   # probe 自动 port-forward 的目标
+
+prometheus:
+  base_url: http://prometheus.localhost:8080   # PreHire 集群 ingress
+  timeout_seconds: 10
+
+jaeger:
+  base_url: http://jaeger.localhost:8080
+  timeout_seconds: 8
+
+k8s:
+  kubeconfig: ""          # 空 = in-cluster → 默认 kubeconfig
+  namespace: default      # PreHire 服务所在命名空间
+  timeout_seconds: 5
+
+postgres:
+  dsn: postgres://aiops:${PG_PASSWORD}@localhost:5433/aiops?sslmode=disable
+  max_open_conn: 20
+
+redis:
+  addr: localhost:6380    # 专用实例（make devup），避免与宿主机既有 Redis 冲突
+  password: ""
+  db: 0
+  pool_size: 10
+  dial_timeout_ms: 200
+  read_timeout_ms: 200
+
+cache:
+  l1_size: 1024
+  l1_ttl_seconds: 30
+  l2_ttl_seconds: 300
+  negative_ttl_seconds: 30
+
+ratelimit:
+  redis_timeout_ms: 100   # 限流判定总超时，绝不比业务慢
+
+llm:
+  providers:
+    - name: glm
+      base_url: https://open.bigmodel.cn/api/paas/v4
+      api_key: ${LLM_API_KEY}
+      model: glm-4.5
+      timeout_seconds: 60
+      max_tokens: 4096
+      temperature: 0.2
+    # fallback 链：在此追加更多 OpenAI 兼容端点，主 provider 失败时依次切换
+    # - name: deepseek
+    #   base_url: https://api.deepseek.com/v1
+    #   api_key: ${LLM_API_KEY_2}
+    #   model: deepseek-chat
+  request_timeout_seconds: 90
