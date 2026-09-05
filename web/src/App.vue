@@ -19,6 +19,10 @@ const pageTitle = computed(() => route.meta?.title || '')
 
       <el-menu router :default-active="route.path" class="sidebar-nav">
         <el-menu-item index="/">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>AI 对话</span>
+        </el-menu-item>
+        <el-menu-item index="/tickets">
           <el-icon><Odometer /></el-icon>
           <span>工作台</span>
         </el-menu-item>
