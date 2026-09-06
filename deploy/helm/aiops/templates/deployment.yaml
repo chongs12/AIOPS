@@ -12,7 +12,7 @@ spec:
     spec:
       serviceAccountName: aiops
       hostAliases:
-        - ip: "192.168.65.2"          # kind 中 host.docker.internal 的网关地址，由 values 覆盖
+        - ip: {{ .Values.hostGatewayIp | quote }}  # 从 Pod 访问宿主机（PG/Redis/Milvus）
           hostnames: ["host.docker.internal"]
       containers:
         - name: aiops

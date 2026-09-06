@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${PG_PASSWORD:-aiops_dev}
       POSTGRES_DB: aiops
     ports:
-      - "127.0.0.1:5433:5432"
+      - "5433:5432"
     volumes:
       - aiops_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +23,7 @@ services:
     image: redis:7
     container_name: aiops-redis
     ports:
-      - "127.0.0.1:6380:6379"
+      - "6380:6379"
     volumes:
       - aiops_redisdata:/data
     healthcheck:

@@ -9,6 +9,7 @@ ingress:
   enabled: true
   host: aiops.localhost
 
+hostGatewayIp: "192.168.65.254"   # 从 Pod 访问宿主机的网关 IP（kind on Docker Desktop）
 config:
   prometheusBaseUrl: http://makejob-prometheus.default.svc.cluster.local:9090
   jaegerBaseUrl: http://makejob-jaeger.default.svc.cluster.local:16686
@@ -21,6 +22,10 @@ config:
 
 auth:
   enabled: false
+
+llm:
+  baseUrl: https://ark.cn-beijing.volces.com/api/coding/v3
+  model: deepseek-v4-flash
 
 secrets:
   pgPassword: aiops_dev
