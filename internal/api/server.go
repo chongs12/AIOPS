@@ -43,6 +43,7 @@ type Server struct {
 	dead       DeadLister    // 死信查询（可 nil）
 	verifier   Verifier      // 恢复复查调度（可 nil）
 	cache      *cache.Cache  // 告警去重等（可 nil）
+	providers  ProviderAdmin // provider 链热插拔（可 nil）
 	jbase      string        // Jaeger 查询页基地址（trace 链接）
 }
 
@@ -169,6 +170,8 @@ func (s *Server) Handler() http.Handler {
 		protected.POST("/k8s/actions", s.k8sAction)
 		protected.PUT("/admin/prompts/:scene", s.updatePrompt)
 		protected.DELETE("/admin/prompts/:scene", s.resetPrompt)
+		protected.GET("/admin/providers", s.getProviders)
+		protected.PUT("/admin/providers", s.setProviders)
 	}
 	if s.authSvc != nil {
 		v1.POST("/auth/login", s.Login)

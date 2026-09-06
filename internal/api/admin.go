@@ -130,6 +130,55 @@ func (s *Server) updatePrompt(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已更新，≤5s 生效（两级缓存+版本失效）"})
 }
 
+// ProviderAdmin provider 链热插拔能力（agent.DBPromptStore 实现）。
+type ProviderAdmin interface {
+	GetProviders(ctx context.Context) ([]agent.ProviderCfg, bool)
+	SetProviders(ctx context.Context, ps []agent.ProviderCfg) error
+}
+
+// WithProviderAdmin 注入 provider 热插拔管理。
+func (s *Server) WithProviderAdmin(p ProviderAdmin) *Server { s.providers = p; return s }
+
+// getProviders 读当前 provider 链配置。
+func (s *Server) getProviders(c *gin.Context) {
+	if s.providers == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider 热插拔未装配"})
+		return
+	}
+	ps, ok := s.providers.GetProviders(c.Request.Context())
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"items": []any{}, "note": "未配置自定义链，使用启动配置"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": ps})
+}
+
+// setProviders 热更新 provider 链（≤5s 内 watcher 完成替换）。
+func (s *Server) setProviders(c *gin.Context) {
+	if s.providers == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider 热插拔未装配"})
+		return
+	}
+	var req struct {
+		Providers []agent.ProviderCfg `json:"providers"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Providers) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "providers 必填（至少一项）"})
+		return
+	}
+	for _, p := range req.Providers {
+		if p.Name == "" || p.BaseURL == "" || p.APIKey == "" || p.Model == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name/base_url/api_key/model 必填"})
+			return
+		}
+	}
+	if err := s.providers.SetProviders(c.Request.Context(), req.Providers); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "provider 链已更新，≤10s 内热替换生效", "count": len(req.Providers)})
+}
+
 // resetPrompt 恢复场景为内置模板（删除 DB 覆盖并失效版本）。
 func (s *Server) resetPrompt(c *gin.Context) {
 	if s.prompts == nil {

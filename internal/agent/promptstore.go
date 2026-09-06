@@ -130,6 +130,53 @@ ON CONFLICT (scene) DO UPDATE SET config=EXCLUDED.config, updated_at=now()`, sce
 	return err
 }
 
+// ProviderCfg provider 级配置（热插拔：base_url/key/model 链）。
+type ProviderCfg struct {
+	Name        string  `json:"name"`
+	BaseURL     string  `json:"base_url"`
+	APIKey      string  `json:"api_key"`
+	Model       string  `json:"model"`
+	TimeoutSec  int     `json:"timeout_seconds"`
+	MaxTokens   int     `json:"max_tokens"`
+	Temperature float64 `json:"temperature"`
+}
+
+// GetProviders 读 provider 链配置（特殊 scene "__providers__"）。
+func (s *DBPromptStore) GetProviders(ctx context.Context) ([]ProviderCfg, bool) {
+	key := s.ver.VersionedKey(ctx, "providers", "chain")
+	v, _, err := s.cache.GetOrLoad(ctx, key, 60*time.Second, func(ctx context.Context) ([]byte, error) {
+		var raw []byte
+		row := s.db.QueryRowContext(ctx, `SELECT config FROM agent_configs WHERE scene='__providers__'`)
+		if err := row.Scan(&raw); err != nil {
+			return nil, err
+		}
+		return raw, nil
+	})
+	if err != nil {
+		return nil, false
+	}
+	var ps []ProviderCfg
+	if err := json.Unmarshal(v, &ps); err != nil || len(ps) == 0 {
+		return nil, false
+	}
+	return ps, true
+}
+
+// SetProviders 保存 provider 链配置并失效版本（热插拔触发）。
+func (s *DBPromptStore) SetProviders(ctx context.Context, ps []ProviderCfg) error {
+	raw, err := json.Marshal(ps)
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO agent_configs (scene, prompt, config, updated_at) VALUES ('__providers__','', $1, now())
+ON CONFLICT (scene) DO UPDATE SET config=EXCLUDED.config, updated_at=now()`, raw); err != nil {
+		return err
+	}
+	_, err = s.ver.BumpVersion(ctx, "providers")
+	return err
+}
+
 // Set 管理面更新 prompt（立即失效版本号，≤5s 全量生效）。
 func (s *DBPromptStore) Set(ctx context.Context, scene, prompt string) error {
 	if _, err := s.db.ExecContext(ctx, `

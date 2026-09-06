@@ -198,6 +198,42 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 		},
 	})
 
+	// provider 热插拔（P7 增补）：后台监听 DB provider 链配置，变化即 SwapProviders。
+	if db != nil && llmc != nil && runtimeSceneCfg != nil {
+		if store, ok := runtimeSceneCfg.(*agent.DBPromptStore); ok {
+			go func() {
+				last := ""
+				for {
+					ctx2, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+					ps, _ := store.GetProviders(ctx2)
+					cancel()
+					if len(ps) > 0 {
+						raw, _ := json.Marshal(ps)
+						sig := string(raw)
+						if sig != last && ps[0].APIKey != "" {
+							var chain []llm.Provider
+							for _, pc := range ps {
+								chain = append(chain, llm.NewOpenAIProvider(llm.OpenAIOptions{
+									Name: pc.Name, BaseURL: pc.BaseURL, APIKey: pc.APIKey, Model: pc.Model,
+									Timeout:     time.Duration(pc.TimeoutSec) * time.Second,
+									MaxTokens:   pc.MaxTokens,
+									Temperature: pc.Temperature,
+								}))
+							}
+							if err := llmc.SwapProviders(chain); err == nil {
+								slog.Info("provider 链热替换完成", "chain", llmc.ProviderNames())
+								last = sig
+							}
+						}
+					} else if last != "" {
+						last = "" // 配置被清除，允许下次设置时再次触发
+					}
+					time.Sleep(5 * time.Second)
+				}
+			}()
+		}
+	}
+
 	// 鉴权（默认关闭）。
 	var authSvc api.AuthBackend
 	if cfg.Auth.Enabled && db != nil {
@@ -237,6 +273,9 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	srv.WithAuth(authSvc)
 	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver})
 	srv.WithAdmin(promptAdmin, caseStoreFull)
+	if store, ok := runtimeSceneCfg.(*agent.DBPromptStore); ok {
+		srv.WithProviderAdmin(store)
+	}
 	a.handler = srv.Handler()
 	return a, nil
 }

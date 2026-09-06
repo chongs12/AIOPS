@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"aiops/pkg/ratelimit"
@@ -20,11 +21,12 @@ var ErrNoProvider = errors.New("llm: 未配置任何 provider")
 
 // Client LLM 调用入口：provider fallback 链（首个为主，失败依次切换），
 // 内建并发闸、trace 与指标。全链路失败返回聚合错误。
+// provider 链支持运行时热替换（SwapProviders），无需重启。
 type Client struct {
-	providers []Provider
-	sem       *ratelimit.Semaphore
-	tracer    trace.Tracer
-	metrics   *metrics
+	chain   atomic.Value // []Provider
+	sem     *ratelimit.Semaphore
+	tracer  trace.Tracer
+	metrics *metrics
 }
 
 // ClientOptions 客户端参数。
@@ -41,18 +43,33 @@ func NewClient(providers []Provider, opts ClientOptions) (*Client, error) {
 	if opts.MaxConcurrency <= 0 {
 		opts.MaxConcurrency = 4
 	}
-	return &Client{
-		providers: providers,
-		sem:       ratelimit.NewSemaphore(opts.MaxConcurrency),
-		tracer:    otel.Tracer("aiops/pkg/llm"),
-		metrics:   newMetrics(),
-	}, nil
+	c := &Client{
+		sem:     ratelimit.NewSemaphore(opts.MaxConcurrency),
+		tracer:  otel.Tracer("aiops/pkg/llm"),
+		metrics: newMetrics(),
+	}
+	c.chain.Store(providers)
+	return c, nil
+}
+
+// current 取当前 provider 链（热替换安全）。
+func (c *Client) current() []Provider {
+	return c.chain.Load().([]Provider)
+}
+
+// SwapProviders 运行时替换 provider 链（热插拔）：下一次调用立即生效。
+func (c *Client) SwapProviders(providers []Provider) error {
+	if len(providers) == 0 {
+		return errors.New("llm: 替换的 provider 链为空")
+	}
+	c.chain.Store(providers)
+	return nil
 }
 
 // ProviderNames 返回 fallback 链顺序（用于启动日志/健康展示）。
 func (c *Client) ProviderNames() []string {
-	names := make([]string, 0, len(c.providers))
-	for _, p := range c.providers {
+	names := make([]string, 0)
+	for _, p := range c.current() {
 		names = append(names, p.Name())
 	}
 	return names
@@ -66,15 +83,16 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, erro
 	}
 	defer release()
 
+	providers := c.current()
 	var lastErr error
-	for i, p := range c.providers {
+	for i, p := range providers {
 		resp, err := c.chatOnce(ctx, p, i, req)
 		if err == nil {
 			return resp, nil
 		}
 		lastErr = err
-		if i+1 < len(c.providers) {
-			slog.Warn("llm provider 失败，切换 fallback", "provider", p.Name(), "next", c.providers[i+1].Name(), "err", err)
+		if i+1 < len(providers) {
+			slog.Warn("llm provider 失败，切换 fallback", "provider", p.Name(), "next", providers[i+1].Name(), "err", err)
 		}
 	}
 	return nil, fmt.Errorf("llm 全部 provider 失败: %w", lastErr)
