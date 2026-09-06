@@ -86,3 +86,7 @@ export const rateTicket = (id, score, comment) =>
 export const ticketStats = () => http.get('/api/v1/tickets/stats').then(r => r.data)
 export const listCases = (limit = 20) => http.get('/api/v1/cases', { params: { limit } }).then(r => r.data)
 export const caseDetail = (ticketId) => http.get(`/api/v1/cases/${ticketId}`).then(r => r.data)
+
+// ---- provider 链热插拔 ----
+export const getProviderChain = () => http.get('/api/v1/admin/providers').then(r => r.data)
+export const setProviderChain = (providers) => http.put('/api/v1/admin/providers', { providers }).then(r => r.data)

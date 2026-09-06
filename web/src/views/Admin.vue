@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { listPrompts, updatePrompt, resetPrompt, searchCases } from '../api'
+import { listPrompts, updatePrompt, resetPrompt, searchCases, getProviderChain, setProviderChain } from '../api'
 
 const scenes = ref([])
 const backend = ref('')
@@ -9,6 +9,8 @@ const draft = ref('')
 const caseQuery = ref('')
 const caseResults = ref([])
 const caseLoading = ref(false)
+const chain = ref([])
+const chainLoading = ref(false)
 
 async function load() {
   const d = await listPrompts()
@@ -64,7 +66,47 @@ async function search() {
 }
 
 import { ElMessage } from 'element-plus'
-onMounted(load)
+const chainCols = [
+  { key: 'name', label: '名称', ph: 'ark-deepseek' },
+  { key: 'base_url', label: 'Base URL', ph: 'https://...' },
+  { key: 'api_key', label: 'API Key', ph: 'ark-...' },
+  { key: 'model', label: '模型', ph: 'deepseek-v4-flash' },
+  { key: 'timeout_seconds', label: '超时s', ph: '120', num: true },
+  { key: 'max_tokens', label: 'MaxTokens', ph: '4096', num: true },
+  { key: 'temperature', label: '温度', ph: '0.2', num: true },
+]
+
+async function loadChain() {
+  chainLoading.value = true
+  try {
+    const d = await getProviderChain()
+    chain.value = (d.items || []).map(p => ({ ...p }))
+  } finally {
+    chainLoading.value = false
+  }
+}
+
+function addProvider() {
+  chain.value.push({ name: '', base_url: '', api_key: '', model: '',
+    timeout_seconds: 120, max_tokens: 4096, temperature: 0.2 })
+}
+
+function removeProvider(i) {
+  chain.value.splice(i, 1)
+}
+
+async function saveChain() {
+  for (const p of chain.value) {
+    if (!p.name || !p.base_url || !p.api_key || !p.model) {
+      ElMessage.warning('每个 provider 的名称/BaseURL/Key/模型都必填')
+      return
+    }
+  }
+  await setProviderChain(chain.value)
+  ElMessage.success('provider 链已保存，≤10s 内热替换生效（无需重启）')
+}
+
+onMounted(() => { load(); loadChain() })
 </script>
 
 <template>
@@ -104,6 +146,26 @@ onMounted(load)
         </div>
       </el-collapse-item>
     </el-collapse>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔌 Provider 链（热插拔）
+      <span class="muted" style="margin-left: 8px">首个为主，失败自动切换 fallback；保存后 ≤10s 热替换生效，无需重启</span>
+      <el-button size="small" style="margin-left: auto" @click="addProvider">＋ 添加</el-button>
+      <el-button size="small" type="primary" :loading="chainLoading" @click="saveChain">保存并热替换</el-button>
+    </div>
+    <el-empty v-if="!chain.length" description="暂无自定义链（使用启动配置）" :image-size="50" />
+    <div v-for="(p, i) in chain" :key="i" class="provider-row">
+      <el-input v-model="p.name" placeholder="名称" style="width: 130px" />
+      <el-input v-model="p.base_url" placeholder="Base URL" style="width: 280px" />
+      <el-input v-model="p.api_key" placeholder="API Key" show-password style="width: 230px" />
+      <el-input v-model="p.model" placeholder="模型名" style="width: 160px" />
+      <el-input-number v-model="p.timeout_seconds" :min="10" :max="600" :step="10" controls-position="right" style="width: 100px" />
+      <el-input-number v-model="p.max_tokens" :min="256" :max="65536" :step="256" controls-position="right" style="width: 110px" />
+      <el-input-number v-model="p.temperature" :min="0" :max="2" :step="0.1" controls-position="right" style="width: 90px" />
+      <el-button size="small" type="danger" text @click="removeProvider(i)">删除</el-button>
+      <span v-if="i === 0" class="muted" style="font-size: 11px">← 主 provider</span>
+    </div>
   </div>
 
   <div class="card">
