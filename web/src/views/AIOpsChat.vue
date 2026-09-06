@@ -146,6 +146,7 @@ watch(cur, scrollBottom)
             <div class="empty-copy">
               描述一个故障现象，多 Agent 会查询真实集群的 Prometheus / 日志 / 事件，
               给出带证据引用与置信度的根因报告。每段对话都会沉淀为可检索的处置案例。
+              <div class="muted" style="margin-top: 8px; font-size: 11px">🔔 接入 Alertmanager 后，告警会自动创建工单并进入本对话流。
             </div>
             <div class="aiops-quick-questions" style="margin-top: 14px; justify-content: center">
               <button v-for="q in suggestQuestions" :key="q.text" type="button" class="quick-chip"

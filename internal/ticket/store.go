@@ -104,6 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets (created_at DESC);
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pending JSONB;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rating INT;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rating_note TEXT DEFAULT '';
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'P2';
 `
 
 const ticketCols = `id, title, content, reporter, type, status, entities, trace_id, report, pending, rating, rating_note, error, created_at, updated_at`
@@ -124,7 +125,7 @@ func (s *PGStore) CreateTicket(ctx context.Context, t *Ticket) error {
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO tickets (id, title, content, reporter, type, status, entities, trace_id, report, pending, priority, rating, rating_note, error, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Rating, t.RatingNote, t.Error, t.CreatedAt, t.UpdatedAt)
+		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Priority, t.Rating, t.RatingNote, t.Error, t.CreatedAt, t.UpdatedAt)
 	return err
 }
 

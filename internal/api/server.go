@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"aiops/pkg/cache"
+
 	"aiops/internal/orchestrator"
 	"aiops/internal/ticket"
 	"aiops/internal/tool"
@@ -40,6 +42,7 @@ type Server struct {
 	queue      TaskSubmitter // 异步任务队列（可 nil = goroutine 兜底）
 	dead       DeadLister    // 死信查询（可 nil）
 	verifier   Verifier      // 恢复复查调度（可 nil）
+	cache      *cache.Cache  // 告警去重等（可 nil）
 	jbase      string        // Jaeger 查询页基地址（trace 链接）
 }
 
@@ -69,6 +72,9 @@ func (s *Server) WithVerifier(v Verifier) *Server { s.verifier = v; return s }
 type DeadLister interface {
 	ListDead(ctx context.Context, limit int) (json.RawMessage, error)
 }
+
+// WithCache 注入缓存（告警去重）。
+func (s *Server) WithCache(c *cache.Cache) *Server { s.cache = c; return s }
 
 // WithDeadLister 注入死信查询（nil = 队列未装配）。
 func (s *Server) WithDeadLister(d DeadLister) *Server { s.dead = d; return s }
@@ -137,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 		v1.GET("/tasks/dead", s.listDeadTasks)        // C5 死信任务（管理面排查）
 		v1.GET("/tickets/:id/replay", s.ticketReplay) // P3 推理回放事件流
 		v1.GET("/tickets/stats", s.stats)             // P5 工单统计
+		v1.POST("/alerts/webhook", s.alertWebhook)    // P6 告警接入
 
 		k8sGrp := v1.Group("/k8s")
 		{

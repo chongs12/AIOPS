@@ -150,7 +150,9 @@ onUnmounted(() => es && es.close())
     <!-- 顶部信息 -->
     <div class="card" style="display: flex; align-items: center; gap: 12px; padding: 14px 20px">
       <div>
-        <div style="font-weight: 700; font-size: 15px">{{ tk.title }}</div>
+        <div style="font-weight: 700; font-size: 15px">
+          <el-tag v-if="tk.reporter === 'alertmanager'" size="small" type="danger" effect="dark" style="margin-right: 6px">🔔 告警</el-tag>{{ tk.title }}
+        </div>
         <div class="muted">
           <span class="mono">{{ tk.id }}</span> · {{ typeLabel(tk.type) }}
           <template v-if="tk.entities?.service"> · 服务 <b>{{ tk.entities.service }}</b></template>

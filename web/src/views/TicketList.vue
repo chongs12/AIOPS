@@ -81,6 +81,12 @@ onMounted(load)
           <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="来源" width="90">
+        <template #default="{ row }">
+          <el-tag v-if="row.reporter === 'alertmanager'" size="small" type="danger" effect="dark">🔔 告警</el-tag>
+          <span v-else class="muted">人工</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="entities.service" label="涉及服务" width="110" />
       <el-table-column prop="report.confidence" label="置信度" width="90">
         <template #default="{ row }">

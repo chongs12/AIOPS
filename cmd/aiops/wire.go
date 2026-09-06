@@ -231,6 +231,7 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	srv := api.NewServer(a.store, orch, cfg.Jaeger.BaseURL)
 	srv.WithTools(executor, auditReader)
 	srv.WithQueue(taskQueue)
+	srv.WithCache(appCache)
 	srv.WithVerifier(orch)
 	srv.WithDeadLister(deadLister)
 	srv.WithAuth(authSvc)
