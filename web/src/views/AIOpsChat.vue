@@ -259,7 +259,7 @@ watch(cur, scrollBottom)
 </template>
 
 <style scoped>
-.aiops-page { display: flex; gap: 14px; height: calc(100vh - var(--header-height) - 40px); }
+.aiops-page { display: flex; gap: 14px; height: calc(100vh - var(--header-h) - 40px); overflow: hidden; }
 .aiops-session-list {
   width: 240px; flex-shrink: 0; background: var(--card-bg);
   border-radius: var(--card-radius); box-shadow: var(--card-shadow);
@@ -279,7 +279,7 @@ watch(cur, scrollBottom)
 .mini-dot.investigating, .mini-dot.awaiting_info { background: var(--warning); }
 
 .aiops-chat-main {
-  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
   background: var(--card-bg); border-radius: var(--card-radius); box-shadow: var(--card-shadow);
   overflow: hidden;
 }
@@ -292,7 +292,7 @@ watch(cur, scrollBottom)
 @keyframes pulse { 50% { opacity: 0.65; } }
 
 .message-stage { flex: 1; min-height: 0; }
-.aiops-message-list { height: 100%; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.aiops-message-list { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .message-empty { margin: auto; max-width: 400px; text-align: center; }
 .empty-title { font-size: 17px; font-weight: 700; color: #0f172a; }
 .empty-copy { margin-top: 8px; color: #64748b; line-height: 1.7; font-size: 12.5px; }
@@ -300,7 +300,7 @@ watch(cur, scrollBottom)
 .quick-chip { border: none; border-radius: 999px; padding: 7px 12px; cursor: pointer; font-size: 12px; background: #e0f2fe; color: #075985; transition: all .18s ease; }
 .quick-chip:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08); }
 
-.message-item { display: flex; flex-direction: column; gap: 3px; max-width: 92%; }
+.message-item { display: flex; flex-direction: column; gap: 3px; max-width: 92%; flex-shrink: 0; }
 .message-item.user { align-self: flex-end; }
 .message-meta { display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 11px; }
 .message-item.user .message-meta { justify-content: flex-end; }
