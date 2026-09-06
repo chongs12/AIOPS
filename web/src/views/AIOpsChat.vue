@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { renderMarkdown } from '../lib/markdown'
+import ConfidenceGauge from '../components/ConfidenceGauge.vue'
 import { useRouter } from 'vue-router'
 import {
   createTicket, listTickets, getTicket, listObservations, replyTicket, streamTicket,
@@ -205,9 +206,7 @@ watch(cur, scrollBottom)
                 <div class="report-card">
                   <div class="report-head">
                     <div class="report-title">📋 事故报告</div>
-                    <span class="conf-pill" :class="{ low: (tk.report.confidence || 0) < 0.6 }">
-                      置信度 {{ ((tk.report.confidence || 0) * 100).toFixed(0) }}%
-                    </span>
+                    <ConfidenceGauge :confidence="tk.report.confidence || 0" :size="52" />
                   </div>
                   <div class="report-section"><h4>根因</h4>
                     <div style="font-size: 13px">{{ tk.report.root_cause }}</div></div>

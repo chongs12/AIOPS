@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { createTicket, listTickets, statusType, statusLabel, typeLabel } from '../api'
+import SkeletonCard from '../components/SkeletonCard.vue'
 
 const router = useRouter()
 const items = ref([])
@@ -68,7 +69,8 @@ onMounted(load)
       </el-button>
     </div>
 
-    <el-table :data="items" v-loading="loading" @row-click="row => router.push(`/tickets/${row.id}`)" style="cursor: pointer">
+    <SkeletonCard v-if="loading" :rows="4" />
+    <el-table v-else :data="items" @row-click="row => router.push(`/tickets/${row.id}`)" style="cursor: pointer">
       <el-table-column prop="id" label="工单号" width="200">
         <template #default="{ row }"><span class="mono">{{ row.id }}</span></template>
       </el-table-column>

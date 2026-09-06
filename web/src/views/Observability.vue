@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import echarts from '../lib/echarts'
 import { obsOverview, obsQuery } from '../api'
+import SkeletonCard from '../components/SkeletonCard.vue'
 
 const overview = ref(null)
 const errChart = ref(null)
@@ -78,7 +79,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-loading="loading">
+  <div>
+    <template v-if="loading && !overview">
+      <SkeletonCard :rows="2" chart />
+      <SkeletonCard :rows="3" />
+    </template>
     <div class="stat-grid">
       <div class="stat-card">
         <div class="stat-icon" style="background: linear-gradient(135deg, #6366f1, #4f46e5)">🖥️</div>

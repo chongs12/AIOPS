@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -89,6 +90,10 @@ func (s *Server) k8sAction(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	// P4: 部署页处置成功同样安排恢复复查（与工单 actions 一致）。
+	if res.Status == "ok" && s.verifier != nil {
+		s.verifier.ScheduleVerify(context.WithoutCancel(c.Request.Context()), ConsoleTicket)
 	}
 	c.JSON(http.StatusOK, res)
 }
