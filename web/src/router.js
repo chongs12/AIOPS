@@ -11,6 +11,7 @@ import TicketDetail from './views/TicketDetail.vue'
 import Admin from './views/Admin.vue'
 import Login from './views/Login.vue'
 import NocScreen from './views/NocScreen.vue'
+import TicketReplay from './views/TicketReplay.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -18,6 +19,7 @@ export default createRouter({
     { path: '/', component: AIOpsChat, meta: { title: 'AI 对话' } },
     { path: '/tickets', component: TicketList, meta: { title: '工作台' } },
     { path: '/tickets/:id', component: TicketDetail, meta: { title: '工单详情' } },
+    { path: '/tickets/:id/replay', component: TicketReplay, meta: { title: '推理回放' } },
     { path: '/observability', component: Observability, meta: { title: '可观测总览' } },
     { path: '/metrics', component: MetricsQuery, meta: { title: '指标查询' } },
     { path: '/logs', component: LogsQuery, meta: { title: '日志查询' } },

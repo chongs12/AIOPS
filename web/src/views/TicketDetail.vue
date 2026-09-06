@@ -160,6 +160,9 @@ onUnmounted(() => es && es.close())
       <div style="margin-left: auto; display: flex; align-items: center; gap: 10px">
         <el-tag v-if="live" type="warning" effect="dark" size="small">● 实时处理中</el-tag>
         <el-tag :type="statusType(tk.status)">{{ statusLabel(tk.status) }}</el-tag>
+        <router-link :to="`/tickets/${id}/replay`">
+          <el-button size="small" type="primary" plain>🎬 回放</el-button>
+        </router-link>
         <a v-if="tk.trace_url" class="link" :href="tk.trace_url" target="_blank">
           <el-button size="small" plain>🔍 推理 Trace</el-button>
         </a>

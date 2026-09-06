@@ -123,8 +123,9 @@ func (s *Server) Handler() http.Handler {
 		{
 			admin.GET("/prompts", s.listPrompts)
 		}
-		v1.GET("/cases/search", s.searchCases) // M5 相似案例检索
-		v1.GET("/tasks/dead", s.listDeadTasks) // C5 死信任务（管理面排查）
+		v1.GET("/cases/search", s.searchCases)        // M5 相似案例检索
+		v1.GET("/tasks/dead", s.listDeadTasks)        // C5 死信任务（管理面排查）
+		v1.GET("/tickets/:id/replay", s.ticketReplay) // P3 推理回放事件流
 
 		k8sGrp := v1.Group("/k8s")
 		{

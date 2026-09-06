@@ -130,6 +130,9 @@ watch(cur, scrollBottom)
           <span v-else-if="tk" class="environment-chip" :class="{ bad: tk.status !== 'resolved' }">
             {{ statusLabel(tk.status) }}
           </span>
+          <el-button v-if="cur" size="small" class="aiops-toolbar-btn" @click="router.push(`/tickets/${cur}/replay`)">
+            <el-icon><VideoPlay /></el-icon><span>回放</span>
+          </el-button>
           <el-button size="small" class="aiops-toolbar-btn" @click="router.push('/')">
             <el-icon><Grid /></el-icon><span>工作台</span>
           </el-button>
