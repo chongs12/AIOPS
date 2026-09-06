@@ -17,7 +17,7 @@ import Knowledge from './views/Knowledge.vue'
 export default createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', component: AIOpsChat, meta: { title: 'AI 对话' } },
+    { path: '/', component: AIOpsChat, meta: { title: '智能助手' } },
     { path: '/tickets', component: TicketList, meta: { title: '工作台' } },
     { path: '/tickets/:id', component: TicketDetail, meta: { title: '工单详情' } },
     { path: '/tickets/:id/replay', component: TicketReplay, meta: { title: '推理回放' } },
