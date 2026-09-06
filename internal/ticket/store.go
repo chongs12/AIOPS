@@ -43,7 +43,7 @@ func New(title, content, reporter string) *Ticket {
 	now := time.Now()
 	return &Ticket{
 		ID: NewID(), Title: title, Content: content, Reporter: reporter,
-		Type: TypeOther, Status: StatusSubmitted, CreatedAt: now, UpdatedAt: now,
+		Type: TypeOther, Status: StatusSubmitted, Priority: "P2", CreatedAt: now, UpdatedAt: now,
 	}
 }
 
@@ -122,8 +122,8 @@ func (s *PGStore) CreateTicket(ctx context.Context, t *Ticket) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
-INSERT INTO tickets (id, title, content, reporter, type, status, entities, trace_id, report, pending, rating, rating_note, error, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+INSERT INTO tickets (id, title, content, reporter, type, status, entities, trace_id, report, pending, priority, rating, rating_note, error, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Rating, t.RatingNote, t.Error, t.CreatedAt, t.UpdatedAt)
 	return err
 }
@@ -170,9 +170,9 @@ func (s *PGStore) UpdateTicket(ctx context.Context, t *Ticket) error {
 	}
 	_, err = s.db.ExecContext(ctx, `
 UPDATE tickets SET title=$2, content=$3, reporter=$4, type=$5, status=$6, entities=$7,
-                   trace_id=$8, report=$9, pending=$10, rating=$11, rating_note=$12, error=$13, updated_at=$14
+                   trace_id=$8, report=$9, pending=$10, priority=$11, rating=$12, rating_note=$13, error=$14, updated_at=$15
 WHERE id=$1`,
-		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Rating, t.RatingNote, t.Error, t.UpdatedAt)
+		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Priority, t.Rating, t.RatingNote, t.Error, t.UpdatedAt)
 	return err
 }
 

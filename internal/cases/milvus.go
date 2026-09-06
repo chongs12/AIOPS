@@ -79,6 +79,11 @@ func (s *MilvusStore) Save(ctx context.Context, c *Case) error {
 	return s.cli.Flush(ctx, collection, false)
 }
 
+// List 最近案例（Milvus 不支持便捷全量列举，转发 PG）。
+func (s *MilvusStore) List(ctx context.Context, limit int) ([]Case, error) {
+	return s.falls.List(ctx, limit)
+}
+
 // Search 向量检索 topK；失败兜底 PG。
 func (s *MilvusStore) Search(ctx context.Context, query string, topK int) ([]Scored, error) {
 	sctx, cancel := context.WithTimeout(ctx, 3*time.Second)

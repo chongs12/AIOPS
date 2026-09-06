@@ -81,3 +81,8 @@ export const jaegerTraces = (service) => http.get('/api/v1/jaeger/traces', { par
 
 export const rateTicket = (id, score, comment) =>
   http.patch(`/api/v1/tickets/${id}/rating`, { score, comment }).then(r => r.data)
+
+// ---- P5 统计与知识库 ----
+export const ticketStats = () => http.get('/api/v1/tickets/stats').then(r => r.data)
+export const listCases = (limit = 20) => http.get('/api/v1/cases', { params: { limit } }).then(r => r.data)
+export const caseDetail = (ticketId) => http.get(`/api/v1/cases/${ticketId}`).then(r => r.data)

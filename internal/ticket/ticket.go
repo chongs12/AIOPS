@@ -36,6 +36,7 @@ type Ticket struct {
 	Entities   Entities     `json:"entities"`
 	TraceID    string       `json:"trace_id,omitempty"` // 一次处理 = 一条 trace
 	Report     *Report      `json:"report,omitempty"`
+	Priority   string       `json:"priority,omitempty"`    // P0-P3，默认 P2
 	Rating     int          `json:"rating,omitempty"`      // 满意度 1-5（resolved 后可评）
 	RatingNote string       `json:"rating_note,omitempty"` // 评价备注
 	Error      string       `json:"error,omitempty"`       // failed 时的原因

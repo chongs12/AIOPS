@@ -35,6 +35,7 @@ type Scored struct {
 type Store interface {
 	Save(ctx context.Context, c *Case) error
 	Search(ctx context.Context, query string, topK int) ([]Scored, error)
+	List(ctx context.Context, limit int) ([]Case, error) // 全量列表（知识库页）
 	Backend() string
 }
 
@@ -116,6 +117,29 @@ INSERT INTO cases (ticket_id, type, service, root_cause, summary, created_at)
 VALUES ($1,$2,$3,$4,$5,COALESCE($6, now()))`,
 		c.TicketID, c.Type, c.Service, c.RootCause, c.Summary, nullableTime(c.CreatedAt))
 	return err
+}
+
+// List 最近案例（知识库列表页；读近 500 条按时间序返回）。
+func (s *PGStore) List(ctx context.Context, limit int) ([]Case, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT ticket_id, type, service, root_cause, summary, created_at
+FROM cases ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Case
+	for rows.Next() {
+		var c Case
+		if err := rows.Scan(&c.TicketID, &c.Type, &c.Service, &c.RootCause, &c.Summary, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // Search 载入近 500 条做 bigram 余弦排序。

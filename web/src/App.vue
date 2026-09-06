@@ -50,6 +50,9 @@ const pageTitle = computed(() => route.meta?.title || '')
           <el-menu-item index="/deployments">
             <el-icon><Box /></el-icon><span>部署管理</span>
           </el-menu-item>
+          <el-menu-item index="/knowledge">
+            <el-icon><Collection /></el-icon><span>知识库</span>
+          </el-menu-item>
           <el-menu-item index="/admin">
             <el-icon><Setting /></el-icon><span>管理面</span>
           </el-menu-item>
