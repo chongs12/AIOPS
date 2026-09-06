@@ -82,14 +82,21 @@ func compact(in json.RawMessage) string {
 	return s
 }
 
-// excerptOf 取数据前 1KB 作为证据摘录。
+// excerptOf 生成证据摘录（必须整体合法 JSON：大载荷用摘要替代字节截断）。
 func excerptOf(data any) json.RawMessage {
 	b, err := json.Marshal(data)
 	if err != nil || len(b) == 0 {
 		return nil
 	}
-	if len(b) > 1024 {
-		b = b[:1024]
+	if len(b) <= 1024 {
+		return b
 	}
-	return b
+	summary, err := json.Marshal(map[string]any{
+		"note":  "excerpt omitted: payload too large, 全量数据见 data 字段",
+		"bytes": len(b),
+	})
+	if err != nil {
+		return nil
+	}
+	return summary
 }

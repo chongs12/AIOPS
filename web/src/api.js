@@ -50,3 +50,13 @@ export const obsOverview = () => http.get('/api/v1/observability/overview').then
 export const obsQuery = (payload) => http.post('/api/v1/observability/query', payload).then(r => r.data)
 export const KNOWN_SERVICES = ['gateway', 'user', 'membership', 'question', 'interview', 'realtime',
   'growth', 'plan', 'companion', 'community', 'learning-archive', 'ai-gateway', 'rag', 'coderunner', 'admin']
+
+// ---- K8s 平台 / 链路 ----
+export const listDeployments = () => http.get('/api/v1/k8s/deployments').then(r => r.data)
+export const listK8sEvents = (pod_prefix, since_minutes = 60) =>
+  http.get('/api/v1/k8s/events', { params: { pod_prefix, since_minutes } }).then(r => r.data)
+export const queryK8sLogs = (pod_prefix, since_minutes = 30, tail_lines = 200) =>
+  http.get('/api/v1/k8s/logs', { params: { pod_prefix, since_minutes, tail_lines } }).then(r => r.data)
+export const runK8sAction = (tool, input) => http.post('/api/v1/k8s/actions', { tool, input }).then(r => r.data)
+export const jaegerServices = () => http.get('/api/v1/jaeger/services').then(r => r.data)
+export const jaegerTraces = (service) => http.get('/api/v1/jaeger/traces', { params: { service } }).then(r => r.data)

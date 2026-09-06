@@ -15,6 +15,7 @@ import (
 const (
 	NameLogs   = "k8s.logs"
 	NameEvents = "k8s.events"
+	NameDeps   = "k8s.list_deployments"
 	NamePods   = "k8s.get_pods"
 	NameScale  = "k8s.scale"
 	NameUndo   = "k8s.rollout_undo"
@@ -52,6 +53,11 @@ func NewReadTools(b Base) []tool.Tool {
 					return nil, err
 				}
 				return b.Pods(ctx, p)
+			}},
+		&readTool{base: b, name: NameDeps, desc: "列出命名空间全部 Deployment（副本数/就绪/镜像/revision）",
+			input: json.RawMessage(`{"type":"object"}`),
+			run: func(ctx context.Context, b Base, in json.RawMessage) (any, error) {
+				return b.Deployments(ctx)
 			}},
 	}
 }

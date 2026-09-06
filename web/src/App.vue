@@ -33,8 +33,20 @@ const pageTitle = computed(() => route.meta?.title || '')
           <el-menu-item index="/metrics">
             <el-icon><TrendCharts /></el-icon><span>指标查询</span>
           </el-menu-item>
+          <el-menu-item index="/logs">
+            <el-icon><Document /></el-icon><span>日志查询</span>
+          </el-menu-item>
+          <el-menu-item index="/events">
+            <el-icon><Bell /></el-icon><span>事件墙</span>
+          </el-menu-item>
+          <el-menu-item index="/trace">
+            <el-icon><Connection /></el-icon><span>链路追踪</span>
+          </el-menu-item>
         </el-menu-item-group>
         <el-menu-item-group title="平台管理">
+          <el-menu-item index="/deployments">
+            <el-icon><Box /></el-icon><span>部署管理</span>
+          </el-menu-item>
           <el-menu-item index="/admin">
             <el-icon><Setting /></el-icon><span>管理面</span>
           </el-menu-item>

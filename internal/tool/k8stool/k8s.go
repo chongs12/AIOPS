@@ -142,6 +142,43 @@ func (b *Base) Events(ctx context.Context, in EventsInput) (json.RawMessage, err
 	return json.Marshal(map[string]any{"namespace": b.Namespace, "events": out, "count": len(out)})
 }
 
+// DeploymentsInput k8s.list_deployments 输入。
+type DeploymentsInput struct{}
+
+// depView Deployment 视图。
+type depView struct {
+	Name      string `json:"name"`
+	Replicas  int32  `json:"replicas"`
+	Ready     int32  `json:"ready"`
+	Image     string `json:"image"`
+	Revision  string `json:"revision"`
+	CreatedAt string `json:"created_at"`
+}
+
+// Deployments 列出命名空间全部 Deployment（部署管理页数据源）。
+func (b *Base) Deployments(ctx context.Context) (json.RawMessage, error) {
+	deps, err := b.Client.AppsV1().Deployments(b.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("列出 deployments 失败: %w", err)
+	}
+	out := make([]depView, 0, len(deps.Items))
+	for _, d := range deps.Items {
+		v := depView{
+			Name:      d.Name,
+			Replicas:  *d.Spec.Replicas,
+			Ready:     d.Status.ReadyReplicas,
+			CreatedAt: d.CreationTimestamp.Format(time.RFC3339),
+			Revision:  d.Annotations["deployment.kubernetes.io/revision"],
+		}
+		if len(d.Spec.Template.Spec.Containers) > 0 {
+			v.Image = d.Spec.Template.Spec.Containers[0].Image
+		}
+		out = append(out, v)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return json.Marshal(map[string]any{"namespace": b.Namespace, "deployments": out, "count": len(out)})
+}
+
 // PodsInput k8s.get_pods 输入。
 type PodsInput struct {
 	PodPrefix string `json:"pod_prefix,omitempty"`

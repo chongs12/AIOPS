@@ -100,6 +100,15 @@ func (s *Server) Handler() http.Handler {
 			admin.DELETE("/prompts/:scene", s.resetPrompt)
 		}
 		v1.GET("/cases/search", s.searchCases) // M5 相似案例检索
+		k8sGrp := v1.Group("/k8s")
+		{
+			k8sGrp.GET("/deployments", s.listK8sDeployments)
+			k8sGrp.GET("/events", s.listK8sEvents)
+			k8sGrp.GET("/logs", s.queryK8sLogs)
+			k8sGrp.POST("/actions", s.k8sAction)
+		}
+		v1.GET("/jaeger/services", s.jaegerServices)
+		v1.GET("/jaeger/traces", s.jaegerTraces)
 		obs := v1.Group("/observability")
 		{
 			obs.GET("/templates", s.listTemplates)
