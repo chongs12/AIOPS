@@ -90,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 		v1.GET("/tickets/:id/messages", s.listMessages)
 		v1.GET("/tickets/:id/observations", s.listObservations)
 		v1.POST("/tickets/:id/reply", s.replyTicket)    // HITL：补充信息，断点续跑
+		v1.PATCH("/tickets/:id/rating", s.rateTicket)   // 满意度评价
 		v1.GET("/tickets/:id/stream", s.streamTicket)   // SSE 推流
 		v1.POST("/tickets/:id/actions", s.actionTicket) // 处置动作（白名单+人工确认）
 		v1.GET("/tickets/:id/audit", s.listAudit)       // 审计记录

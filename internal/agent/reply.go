@@ -37,10 +37,10 @@ func (a *ReplyAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) {
 		return nil, fmt.Errorf("reply prompt 渲染失败: %w", err)
 	}
 
+	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}}
+	applyScene(rc, NameReply, &req)
 	var out reportLLM
-	if err := rc.LLM.ChatJSON(ctx, llm.ChatRequest{
-		Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}},
-	}, &out); err != nil {
+	if err := rc.LLM.ChatJSON(ctx, req, &out); err != nil {
 		return nil, fmt.Errorf("reply 结构化输出失败: %w", err)
 	}
 

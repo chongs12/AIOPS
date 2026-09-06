@@ -32,11 +32,13 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// ChatRequest 一次对话请求；Temperature/MaxTokens 为 0 时使用 provider 默认。
+// ChatRequest 一次对话请求；Temperature/MaxTokens/Model 为零值时使用 provider 默认。
+// Model 支持按场景覆盖（管理面热更新），仅当 provider 侧配置同名/兼容模型时生效。
 type ChatRequest struct {
 	Messages    []Message
 	Temperature float64
 	MaxTokens   int
+	Model       string
 }
 
 // ChatResponse 一次对话结果（含用量，供指标统计）。
@@ -116,8 +118,12 @@ func (p *openaiProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRespon
 		maxTokens = req.MaxTokens
 	}
 
+	model := p.opts.Model
+	if req.Model != "" {
+		model = req.Model
+	}
 	body, err := json.Marshal(chatPayload{
-		Model: p.opts.Model, Messages: req.Messages,
+		Model: model, Messages: req.Messages,
 		Temperature: temperature, MaxTokens: maxTokens,
 	})
 	if err != nil {

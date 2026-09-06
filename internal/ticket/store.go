@@ -101,9 +101,11 @@ CREATE TABLE IF NOT EXISTS ticket_observations (
 );
 CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets (created_at DESC);
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pending JSONB;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rating INT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rating_note TEXT DEFAULT '';
 `
 
-const ticketCols = `id, title, content, reporter, type, status, entities, trace_id, report, pending, error, created_at, updated_at`
+const ticketCols = `id, title, content, reporter, type, status, entities, trace_id, report, pending, rating, rating_note, error, created_at, updated_at`
 
 func (s *PGStore) CreateTicket(ctx context.Context, t *Ticket) error {
 	ent, err := json.Marshal(t.Entities)
@@ -119,9 +121,9 @@ func (s *PGStore) CreateTicket(ctx context.Context, t *Ticket) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
-INSERT INTO tickets (id, title, content, reporter, type, status, entities, trace_id, report, pending, error, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Error, t.CreatedAt, t.UpdatedAt)
+INSERT INTO tickets (id, title, content, reporter, type, status, entities, trace_id, report, pending, rating, rating_note, error, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Rating, t.RatingNote, t.Error, t.CreatedAt, t.UpdatedAt)
 	return err
 }
 
@@ -167,9 +169,9 @@ func (s *PGStore) UpdateTicket(ctx context.Context, t *Ticket) error {
 	}
 	_, err = s.db.ExecContext(ctx, `
 UPDATE tickets SET title=$2, content=$3, reporter=$4, type=$5, status=$6, entities=$7,
-                   trace_id=$8, report=$9, pending=$10, error=$11, updated_at=$12
+                   trace_id=$8, report=$9, pending=$10, rating=$11, rating_note=$12, error=$13, updated_at=$14
 WHERE id=$1`,
-		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Error, t.UpdatedAt)
+		t.ID, t.Title, t.Content, t.Reporter, t.Type, t.Status, ent, t.TraceID, report, pending, t.Rating, t.RatingNote, t.Error, t.UpdatedAt)
 	return err
 }
 
@@ -179,8 +181,10 @@ func scanTicket(scan func(dest ...any) error) (*Ticket, error) {
 	var ent, traceID []byte
 	var report, pending []byte
 	var createdAt, updatedAt time.Time
+	var rating sql.NullInt64
+	var ratingNote sql.NullString
 	if err := scan(&t.ID, &t.Title, &t.Content, &t.Reporter, &t.Type, &t.Status,
-		&ent, &traceID, &report, &pending, &t.Error, &createdAt, &updatedAt); err != nil {
+		&ent, &traceID, &report, &pending, &rating, &ratingNote, &t.Error, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -202,6 +206,8 @@ func scanTicket(scan func(dest ...any) error) (*Ticket, error) {
 			t.Pending = &pi
 		}
 	}
+	t.Rating = int(rating.Int64)
+	t.RatingNote = ratingNote.String
 	t.CreatedAt, t.UpdatedAt = createdAt, updatedAt
 	return &t, nil
 }

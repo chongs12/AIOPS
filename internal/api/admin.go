@@ -15,6 +15,8 @@ type PromptAdmin interface {
 	ListScenes(ctx context.Context) ([]agent.SceneInfo, error)
 	Set(ctx context.Context, scene, prompt string) error
 	Get(ctx context.Context, scene string) (string, error)
+	GetSceneConfig(ctx context.Context, scene string) (agent.SceneParams, bool)
+	SetSceneConfig(ctx context.Context, scene string, sp agent.SceneParams) error
 }
 
 // CaseSearch 案例检索能力（cases.Store 实现）。
@@ -51,10 +53,23 @@ func (s *Server) updatePrompt(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Prompt string `json:"prompt"`
+		Prompt string             `json:"prompt"`
+		Config *agent.SceneParams `json:"config,omitempty"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.Prompt == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "prompt 必填"})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体非法"})
+		return
+	}
+	if req.Config != nil {
+		if err := s.prompts.SetSceneConfig(c.Request.Context(), c.Param("scene"), *req.Config); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "场景参数已更新，≤5s 生效"})
+		return
+	}
+	if req.Prompt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "prompt 必填（或提供 config）"})
 		return
 	}
 	if err := s.prompts.Set(c.Request.Context(), c.Param("scene"), req.Prompt); err != nil {

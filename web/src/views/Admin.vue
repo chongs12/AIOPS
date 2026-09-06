@@ -15,14 +15,32 @@ async function load() {
   scenes.value = d.items || []
 }
 
+const cfg = ref({ model: '', temperature: 0.2, max_tokens: 4096, timeout_seconds: 60 })
+
 function edit(s) {
   editing.value = s.scene
   draft.value = s.prompt
+  cfg.value = {
+    model: s.config?.model || '',
+    temperature: s.config?.temperature || 0.2,
+    max_tokens: s.config?.max_tokens || 4096,
+    timeout_seconds: s.config?.timeout_seconds || 60,
+  }
 }
 
 async function save() {
   await updatePrompt(editing.value, draft.value)
   ElMessage.success('已保存，≤5s 生效')
+  editing.value = null
+  await load()
+}
+
+async function saveAll(scene) {
+  await updatePrompt(scene, draft.value, {
+    model: cfg.value.model, temperature: Number(cfg.value.temperature),
+    max_tokens: Number(cfg.value.max_tokens), timeout_seconds: Number(cfg.value.timeout_seconds),
+  })
+  ElMessage.success('已保存（Prompt + 参数），≤5s 生效')
   editing.value = null
   await load()
 }
@@ -63,15 +81,26 @@ onMounted(load)
         </template>
         <el-input v-if="editing === s.scene" v-model="draft" type="textarea" :rows="14" />
         <pre v-else class="mono" style="white-space: pre-wrap; background: #f8fafc; padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.7">{{ s.prompt }}</pre>
-        <div style="margin-top: 10px; display: flex; gap: 8px">
-          <template v-if="editing === s.scene">
-            <el-button type="primary" @click="save">保存</el-button>
+        <div v-if="editing === s.scene" style="margin-top: 10px">
+          <div class="muted" style="margin-bottom: 6px">场景模型参数（≤5s 生效；留空用 provider 默认）</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <el-input v-model="cfg.model" placeholder="模型名，如 glm-4.5" style="width: 220px" />
+            <el-input-number v-model="cfg.temperature" :min="0" :max="2" :step="0.1" placeholder="温度" />
+            <el-input-number v-model="cfg.max_tokens" :min="256" :max="32768" :step="256" placeholder="MaxTokens" />
+            <el-input-number v-model="cfg.timeout_seconds" :min="10" :max="300" :step="10" placeholder="超时s" />
+          </div>
+          <div style="margin-top: 10px; display: flex; gap: 8px">
+            <el-button type="primary" @click="saveAll(s.scene)">保存 Prompt + 参数</el-button>
             <el-button @click="editing = null">取消</el-button>
-          </template>
-          <template v-else>
-            <el-button type="primary" plain @click="edit(s)">编辑</el-button>
-            <el-button v-if="s.source === 'db'" @click="reset(s.scene)">恢复内置</el-button>
-          </template>
+          </div>
+        </div>
+        <div v-else-if="s.config" class="muted" style="margin-top: 6px">
+          参数: model={{ s.config.model || '默认' }} temp={{ s.config.temperature || '默认' }}
+          max_tokens={{ s.config.max_tokens || '默认' }}
+        </div>
+        <div style="margin-top: 10px; display: flex; gap: 8px" v-if="editing !== s.scene">
+          <el-button type="primary" plain @click="edit(s)">编辑</el-button>
+          <el-button v-if="s.source === 'db'" @click="reset(s.scene)">恢复内置</el-button>
         </div>
       </el-collapse-item>
     </el-collapse>

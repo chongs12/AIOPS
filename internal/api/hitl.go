@@ -34,9 +34,8 @@ func (s *Server) replyTicket(c *gin.Context) {
 		return
 	}
 
-	// 断点信息持久化：内容合并、挂起清除、状态回 investigating。
-	tk.Content += "\n[补充回复] " + req.Content
-	tk.Pending = nil
+	// 断点信息持久化：内容合并、状态回 investigating。tk.Content += "\n[补充回复] " + req.Content
+	// pending 保留：续跑后由编排器决定二轮追问（round<2）或带默认值继续。
 	tk.Status = ticket.StatusInvestigating
 	if err := s.store.UpdateTicket(ctx, tk); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -186,4 +185,37 @@ func (s *Server) listAudit(c *gin.Context) {
 		items = []*tool.AuditEntry{}
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+// rateTicket 满意度评价（仅 resolved 工单可评）。
+func (s *Server) rateTicket(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Score   int    `json:"score"`
+		Comment string `json:"comment"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体非法"})
+		return
+	}
+	if req.Score < 1 || req.Score > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "score 取值 1-5"})
+		return
+	}
+	ctx := c.Request.Context()
+	tk, err := s.store.GetTicket(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if tk.Status != ticket.StatusResolved {
+		c.JSON(http.StatusConflict, gin.H{"error": "仅已解决工单可评价，当前: " + tk.Status})
+		return
+	}
+	tk.Rating, tk.RatingNote = req.Score, req.Comment
+	if err := s.store.UpdateTicket(ctx, tk); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "感谢反馈", "rating": tk.Rating})
 }

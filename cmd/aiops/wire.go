@@ -17,6 +17,7 @@ import (
 	"aiops/internal/tool"
 	"aiops/internal/tool/k8stool"
 	"aiops/internal/tool/promtool"
+	"aiops/internal/tool/slowquery"
 	"aiops/pkg/cache"
 	"aiops/pkg/config"
 	"aiops/pkg/llm"
@@ -101,6 +102,13 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 			auditReader = pgAudit
 		} else {
 			slog.Warn("审计存储迁移失败，降级 noop", "err", err)
+		}
+	}
+
+	// 慢查询工具（需 PG）。
+	if db != nil {
+		if err := reg.Register(slowquery.New(db, cfg.SlowQuery.ThresholdSeconds)); err != nil {
+			return nil, err
 		}
 	}
 

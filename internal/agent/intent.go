@@ -35,10 +35,10 @@ func (a *IntentAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) 
 		return nil, fmt.Errorf("intent prompt 渲染失败: %w", err)
 	}
 
+	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}}
+	applyScene(rc, NameIntent, &req)
 	var out intentLLM
-	if err := rc.LLM.ChatJSON(ctx, llm.ChatRequest{
-		Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}},
-	}, &out); err != nil {
+	if err := rc.LLM.ChatJSON(ctx, req, &out); err != nil {
 		return nil, fmt.Errorf("intent 结构化输出失败: %w", err)
 	}
 

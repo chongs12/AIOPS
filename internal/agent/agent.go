@@ -27,6 +27,29 @@ type ToolExecutor interface {
 	Execute(ctx context.Context, ticketID, toolName string, input json.RawMessage) (*tool.Result, error)
 }
 
+// SceneConfigSource 场景参数来源（DB 外置热更新；可 nil）。
+type SceneConfigSource interface {
+	GetSceneConfig(ctx context.Context, scene string) (SceneParams, bool)
+}
+
+// applyScene 把场景参数覆盖到请求（仅覆盖显式配置项）。
+func applyScene(rc *RunContext, scene string, req *llm.ChatRequest) {
+	if rc.SceneCfg == nil {
+		return
+	}
+	if sp, ok := rc.SceneCfg.GetSceneConfig(rc.Ctx, scene); ok {
+		if sp.Model != "" {
+			req.Model = sp.Model
+		}
+		if sp.Temperature > 0 {
+			req.Temperature = sp.Temperature
+		}
+		if sp.MaxTokens > 0 {
+			req.MaxTokens = sp.MaxTokens
+		}
+	}
+}
+
 // RunContext 一次 Agent 运行的输入。
 type RunContext struct {
 	Ticket    *ticket.Ticket
@@ -35,6 +58,8 @@ type RunContext struct {
 	Tools     ToolExecutor
 	LLM       *llm.Client
 	Prompts   llm.TemplateStore
+	SceneCfg  SceneConfigSource // 可 nil
+	Ctx       context.Context   // 场景配置查询用（与 Run 的 ctx 分离）
 }
 
 // Output Agent 运行输出：用户可见叙述 + 强类型载荷。

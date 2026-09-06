@@ -39,6 +39,7 @@ type Orchestrator struct {
 	llm        *llm.Client
 	prompts    llm.TemplateStore
 	cases      CaseStore
+	sceneCfgs  agent.SceneConfigSource
 	maxRounds  int
 	confThresh float64
 	tracer     trace.Tracer
@@ -50,10 +51,11 @@ type Options struct {
 	Agents              map[string]agent.Agent
 	Tools               agent.ToolExecutor
 	LLM                 *llm.Client
-	Prompts             llm.TemplateStore // nil = 内置
-	MaxRounds           int               // 根因补查回环上限，默认 3
-	ConfidenceThreshold float64           // 低于则转人工，默认 0.6
-	CaseStore           CaseStore         // 可 nil
+	Prompts             llm.TemplateStore       // nil = 内置
+	MaxRounds           int                     // 根因补查回环上限，默认 3
+	ConfidenceThreshold float64                 // 低于则转人工，默认 0.6
+	CaseStore           CaseStore               // 可 nil
+	SceneCfgs           agent.SceneConfigSource // 场景参数热更新来源，可 nil
 }
 
 // New 构造编排器。
@@ -69,7 +71,7 @@ func New(opts Options) *Orchestrator {
 	}
 	return &Orchestrator{
 		store: opts.Store, agents: opts.Agents, tools: opts.Tools,
-		llm: opts.LLM, prompts: opts.Prompts, cases: opts.CaseStore,
+		llm: opts.LLM, prompts: opts.Prompts, cases: opts.CaseStore, sceneCfgs: opts.SceneCfgs,
 		maxRounds: opts.MaxRounds, confThresh: opts.ConfidenceThreshold,
 		tracer: otel.Tracer("aiops/internal/orchestrator"),
 	}
@@ -133,29 +135,38 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent 
 	board := evidence.NewBoard()
 	saved := map[string]bool{} // 已落库的观察
 
-	// 1. 意图识别（断点续跑时跳过——实体已在挂起前抽取）。
-	if !skipIntent {
+	// 1. 意图识别（fresh 与 resume 都执行：补充内容需重新评估完整性）。
+	{
 		intentOut, err := o.runAgent(ctx, tk, board, agent.NameIntent)
 		if err != nil {
 			return o.failStep(ctx, tk, "意图识别失败: "+err.Error())
 		}
 		intent := intentOut.Payload.(*agent.IntentResult)
 		o.applyIntent(tk, intent)
-		if err := o.store.UpdateTicket(ctx, tk); err != nil {
-			return err
-		}
 
-		// HITL：信息不全 → 挂起等补充（一等状态，断点已持久化）。
-		if intent.NeedMoreInfo && len(intent.Questions) > 0 && tk.Pending == nil {
-			tk.Status = ticket.StatusAwaitingInfo
-			tk.Pending = &ticket.PendingInfo{Questions: intent.Questions, Round: 1, AskedAt: time.Now()}
-			if err := o.store.UpdateTicket(ctx, tk); err != nil {
-				return err
+		// 多轮 HITL：不完整 → 挂起追问（最多 2 轮）；超限则带默认值继续。
+		if intent.NeedMoreInfo && len(intent.Questions) > 0 {
+			round := 1
+			if tk.Pending != nil {
+				round = tk.Pending.Round + 1
+			}
+			if round <= 2 {
+				tk.Status = ticket.StatusAwaitingInfo
+				tk.Pending = &ticket.PendingInfo{Questions: intent.Questions, Round: round, AskedAt: time.Now()}
+				if err := o.store.UpdateTicket(ctx, tk); err != nil {
+					return err
+				}
+				o.appendMsg(ctx, tk.ID, "agent", agent.NameIntent,
+					fmt.Sprintf("第 %d 轮追问，需要补充信息：\n- ", round)+strings.Join(intent.Questions, "\n- "))
+				span.SetAttributes(attribute.String("ticket.outcome", "awaiting_info"))
+				return nil
 			}
 			o.appendMsg(ctx, tk.ID, "agent", agent.NameIntent,
-				"需要补充信息：\n- "+strings.Join(intent.Questions, "\n- "))
-			span.SetAttributes(attribute.String("ticket.outcome", "awaiting_info"))
-			return nil
+				"已达追问上限，带默认参数继续处理。")
+		}
+		tk.Pending = nil
+		if err := o.store.UpdateTicket(ctx, tk); err != nil {
+			return err
 		}
 	}
 
@@ -201,7 +212,7 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent 
 
 	// 5. 事故报告。
 	rc := &agent.RunContext{Ticket: tk, Board: board, RootCause: rca,
-		Tools: o.tools, LLM: o.llm, Prompts: o.prompts}
+		Tools: o.tools, LLM: o.llm, Prompts: o.prompts, SceneCfg: o.sceneCfgs, Ctx: ctx}
 	replyOut, err := o.runAgentWith(ctx, rc, agent.NameReply)
 	if err != nil {
 		return o.failStep(ctx, tk, "报告生成失败: "+err.Error())
@@ -307,7 +318,8 @@ func (o *Orchestrator) applyIntent(tk *ticket.Ticket, intent *agent.IntentResult
 
 // runAgent 组装 RunContext 并运行 Agent，附 span 与流水消息。
 func (o *Orchestrator) runAgent(ctx context.Context, tk *ticket.Ticket, board *evidence.Board, name string) (*agent.Output, error) {
-	rc := &agent.RunContext{Ticket: tk, Board: board, Tools: o.tools, LLM: o.llm, Prompts: o.prompts}
+	rc := &agent.RunContext{Ticket: tk, Board: board, Tools: o.tools, LLM: o.llm,
+		Prompts: o.prompts, SceneCfg: o.sceneCfgs, Ctx: ctx}
 	return o.runAgentWith(ctx, rc, name)
 }
 

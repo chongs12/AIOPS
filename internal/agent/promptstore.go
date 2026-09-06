@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -35,8 +36,10 @@ func NewDBPromptStore(ctx context.Context, db *sql.DB, rdb redis.UniversalClient
 CREATE TABLE IF NOT EXISTS agent_configs (
     scene      TEXT PRIMARY KEY,
     prompt     TEXT NOT NULL,
+    config     JSONB,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE agent_configs ADD COLUMN IF NOT EXISTS config JSONB;
 `
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("agent_configs 迁移: %w", err)
@@ -72,6 +75,54 @@ func (s *DBPromptStore) Get(ctx context.Context, scene string) (string, error) {
 	return string(v), nil
 }
 
+// SceneParams 场景级模型参数（管理面热更新）。
+type SceneParams struct {
+	Model          string  `json:"model,omitempty"`
+	Temperature    float64 `json:"temperature,omitempty"`
+	MaxTokens      int     `json:"max_tokens,omitempty"`
+	TimeoutSeconds int     `json:"timeout_seconds,omitempty"`
+}
+
+// GetSceneConfig 读场景参数（缓存 5s/60s + 版本失效；无配置返回 false）。
+func (s *DBPromptStore) GetSceneConfig(ctx context.Context, scene string) (SceneParams, bool) {
+	key := s.ver.VersionedKey(ctx, "sceneconfig", scene)
+	v, _, err := s.cache.GetOrLoad(ctx, key, 60*time.Second, func(ctx context.Context) ([]byte, error) {
+		var raw []byte
+		row := s.db.QueryRowContext(ctx, `SELECT config FROM agent_configs WHERE scene=$1`, scene)
+		if err := row.Scan(&raw); err != nil {
+			return nil, err // 无配置/故障 → 不缓存负值，直接 false
+		}
+		return raw, nil
+	})
+	if err != nil {
+		return SceneParams{}, false
+	}
+	var sp SceneParams
+	if err := json.Unmarshal(v, &sp); err != nil {
+		return SceneParams{}, false
+	}
+	return sp, true
+}
+
+// SetSceneConfig 管理面保存场景参数（版本失效 ≤5s 生效）。
+func (s *DBPromptStore) SetSceneConfig(ctx context.Context, scene string, sp SceneParams) error {
+	raw, err := json.Marshal(sp)
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO agent_configs (scene, prompt, config, updated_at) VALUES ($1,'', $2, now())
+ON CONFLICT (scene) DO UPDATE SET config=EXCLUDED.config, updated_at=now()`, scene, raw); err != nil {
+		return err
+	}
+	_, err = s.ver.BumpVersion(ctx, "sceneconfig")
+	if err != nil {
+		return err
+	}
+	_, err = s.ver.BumpVersion(ctx, "prompt")
+	return err
+}
+
 // Set 管理面更新 prompt（立即失效版本号，≤5s 全量生效）。
 func (s *DBPromptStore) Set(ctx context.Context, scene, prompt string) error {
 	if _, err := s.db.ExecContext(ctx, `
@@ -94,10 +145,11 @@ func (s *DBPromptStore) Reset(ctx context.Context, scene string) error {
 
 // SceneInfo 管理面场景视图。
 type SceneInfo struct {
-	Scene     string `json:"scene"`
-	Source    string `json:"source"` // db | builtin
-	Prompt    string `json:"prompt"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+	Scene     string       `json:"scene"`
+	Source    string       `json:"source"` // db | builtin
+	Prompt    string       `json:"prompt"`
+	Config    *SceneParams `json:"config,omitempty"`
+	UpdatedAt string       `json:"updated_at,omitempty"`
 }
 
 // ListScenes 列出全部场景及当前生效模板。
@@ -106,9 +158,10 @@ func (s *DBPromptStore) ListScenes(ctx context.Context) ([]SceneInfo, error) {
 	for _, scene := range promptScenes {
 		var tpl string
 		var updated sql.NullString
+		var cfgRaw []byte
 		err := s.db.QueryRowContext(ctx,
-			`SELECT prompt, to_char(updated_at,'YYYY-MM-DD HH24:MI:SS') FROM agent_configs WHERE scene=$1`, scene).
-			Scan(&tpl, &updated)
+			`SELECT prompt, config, to_char(updated_at,'YYYY-MM-DD HH24:MI:SS') FROM agent_configs WHERE scene=$1`, scene).
+			Scan(&tpl, &cfgRaw, &updated)
 		if err == sql.ErrNoRows {
 			b, err2 := s.builtin.Get(ctx, scene)
 			if err2 != nil {
@@ -120,7 +173,14 @@ func (s *DBPromptStore) ListScenes(ctx context.Context) ([]SceneInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, SceneInfo{Scene: scene, Source: "db", Prompt: tpl, UpdatedAt: updated.String})
+		info := SceneInfo{Scene: scene, Source: "db", Prompt: tpl, UpdatedAt: updated.String}
+		if len(cfgRaw) > 0 {
+			var sp SceneParams
+			if json.Unmarshal(cfgRaw, &sp) == nil {
+				info.Config = &sp
+			}
+		}
+		out = append(out, info)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Scene < out[j].Scene })
 	return out, nil

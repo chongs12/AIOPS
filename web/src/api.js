@@ -14,7 +14,8 @@ export const runAction = (id, tool, input) => http.post(`/api/v1/tickets/${id}/a
 
 // ---- 管理面 / 案例库 ----
 export const listPrompts = () => http.get('/api/v1/admin/prompts').then(r => r.data)
-export const updatePrompt = (scene, prompt) => http.put(`/api/v1/admin/prompts/${scene}`, { prompt }).then(r => r.data)
+export const updatePrompt = (scene, prompt, config) =>
+  http.put(`/api/v1/admin/prompts/${scene}`, config ? { prompt, config } : { prompt }).then(r => r.data)
 export const resetPrompt = (scene) => http.delete(`/api/v1/admin/prompts/${scene}`).then(r => r.data)
 export const searchCases = (q) => http.get('/api/v1/cases/search', { params: { q } }).then(r => r.data)
 
@@ -60,3 +61,6 @@ export const queryK8sLogs = (pod_prefix, since_minutes = 30, tail_lines = 200) =
 export const runK8sAction = (tool, input) => http.post('/api/v1/k8s/actions', { tool, input }).then(r => r.data)
 export const jaegerServices = () => http.get('/api/v1/jaeger/services').then(r => r.data)
 export const jaegerTraces = (service) => http.get('/api/v1/jaeger/traces', { params: { service } }).then(r => r.data)
+
+export const rateTicket = (id, score, comment) =>
+  http.patch(`/api/v1/tickets/${id}/rating`, { score, comment }).then(r => r.data)

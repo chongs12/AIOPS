@@ -29,6 +29,12 @@ type Config struct {
 	RateLimit  RateLimit      `yaml:"ratelimit" env:"RATELIMIT"`
 	LLM        LLM            `yaml:"llm" env:"LLM"`
 	CaseStore  CaseStoreCfg   `yaml:"case_store" env:"CASESTORE"`
+	SlowQuery  SlowQueryCfg   `yaml:"slow_query" env:"SLOWQUERY"`
+}
+
+// SlowQueryCfg 慢查询检测配置。
+type SlowQueryCfg struct {
+	ThresholdSeconds int `yaml:"threshold_seconds" env:"THRESHOLD_SECONDS"`
 }
 
 // CaseStoreCfg 案例库配置（Milvus 优先，不可达降级 PG）。
@@ -144,6 +150,7 @@ func Default() *Config {
 		Cache:     Cache{L1Size: 1024, L1TTLSeconds: 30, L2TTLSeconds: 300, NegativeTTLSeconds: 30},
 		RateLimit: RateLimit{RedisTimeoutMS: 100},
 		CaseStore: CaseStoreCfg{MilvusAddr: "localhost:19530"},
+		SlowQuery: SlowQueryCfg{ThresholdSeconds: 1},
 		LLM: LLM{
 			Providers: []LLMProvider{{
 				Name:           "glm",

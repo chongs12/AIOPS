@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"aiops/internal/evidence"
+	"aiops/internal/ticket"
 	"aiops/internal/tool"
 )
 
@@ -71,8 +72,56 @@ func (a *MetricsAgent) Run(ctx context.Context, rc *RunContext) (*Output, error)
 		}
 	}
 
+	// 慢查询类型：追加 pg_stat_activity 真实检测。
+	if rc.Ticket.Type == ticket.TypeSlowQuery {
+		input, _ := json.Marshal(map[string]any{"threshold_seconds": 1})
+		if tr, err := rc.Tools.Execute(ctx, rc.Ticket.ID, "slowquery.list", input); err == nil {
+			obs := ObservationFromToolResult("slowquery.list", tr)
+			obs.Summary = slowSummary(tr)
+			id := rc.Board.AddObservation(obs)
+			res.ObservationIDs = append(res.ObservationIDs, id)
+			if obs.Status != tool.StatusOK {
+				res.FailedCount++
+			} else {
+				res.Highlights = append(res.Highlights, obs.Summary)
+			}
+		}
+	}
+
 	note := fmt.Sprintf("指标检索：完成 %d 项查询（失败 %d 项）", len(names), res.FailedCount)
 	return &Output{Note: note, Payload: res}, nil
+}
+
+// slowSummary 慢查询检测结果摘要。
+func slowSummary(tr *tool.Result) string {
+	if tr.Status != tool.StatusOK {
+		return "慢查询检测失败：" + tr.DegradedReason
+	}
+	var d struct {
+		Threshold int `json:"threshold_seconds"`
+		Count     int `json:"count"`
+		Queries   []struct {
+			PID      int32  `json:"pid"`
+			User     string `json:"user"`
+			Duration string `json:"duration"`
+			Query    string `json:"query"`
+		} `json:"queries"`
+	}
+	if err := json.Unmarshal(tr.Data, &d); err != nil {
+		return "慢查询检测完成，结果解析异常"
+	}
+	if d.Count == 0 {
+		return fmt.Sprintf("慢查询检测：未发现超过 %ds 的活跃查询", d.Threshold)
+	}
+	var parts []string
+	for i, q := range d.Queries {
+		if i >= 5 {
+			parts = append(parts, fmt.Sprintf("（其余 %d 条略）", d.Count-5))
+			break
+		}
+		parts = append(parts, fmt.Sprintf("pid=%d %s 时长=%s %s", q.PID, q.User, q.Duration, q.Query))
+	}
+	return fmt.Sprintf("慢查询检测：发现 %d 条超过 %ds 的活跃查询——%s", d.Count, d.Threshold, strings.Join(parts, "；"))
 }
 
 const timeRFC3339 = "2006-01-02T15:04:05Z07:00"

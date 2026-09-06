@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   getTicket, listObservations, listAudit, replyTicket, runAction, streamTicket,
-  statusType, statusLabel, typeLabel, agentLabel, obsQuery,
+  statusType, statusLabel, typeLabel, agentLabel, obsQuery, rateTicket,
 } from '../api'
 import echarts from '../lib/echarts'
 
@@ -16,6 +16,7 @@ const input = ref('')
 const busy = ref(false)
 const live = ref(false)
 let es = null
+const rating = ref({ score: 5, note: '' })
 const trendEl = ref(null)
 let trendChart = null
 
@@ -85,6 +86,12 @@ function connect() {
     },
     onError: () => { live.value = false },
   })
+}
+
+async function submitRating() {
+  await rateTicket(id, rating.value.score, rating.value.note)
+  ElMessage.success('感谢反馈')
+  await load()
 }
 
 async function send() {
@@ -228,6 +235,20 @@ onUnmounted(() => es && es.close())
         <el-input v-model="input" type="textarea" :rows="2"
                   :placeholder="tk.status === 'awaiting_info' ? '补充工单信息，系统将从断点续跑…' : '补充信息…'" />
         <el-button type="primary" :disabled="!input.trim()" @click="send">发送<br>断点续跑</el-button>
+      </div>
+    </div>
+
+    <!-- 满意度评价（resolved 后） -->
+    <div class="card" v-if="tk.status === 'resolved'" style="margin-top: 18px">
+      <div class="card-title">⭐ 满意度评价
+        <span v-if="tk.rating" class="muted" style="margin-left: 8px">
+          已评价：{{ tk.rating }} 分{{ tk.rating_note ? ' · ' + tk.rating_note : '' }}
+        </span>
+      </div>
+      <div v-if="!tk.rating" style="display: flex; align-items: center; gap: 12px">
+        <el-rate v-model="rating.score" />
+        <el-input v-model="rating.note" placeholder="备注（可空）" style="width: 300px" />
+        <el-button type="primary" size="small" @click="submitRating">提交评价</el-button>
       </div>
     </div>
 

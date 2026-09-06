@@ -38,10 +38,10 @@ func (a *RootCauseAgent) Run(ctx context.Context, rc *RunContext) (*Output, erro
 		return nil, fmt.Errorf("rootcause prompt 渲染失败: %w", err)
 	}
 
+	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}}
+	applyScene(rc, NameRootCause, &req)
 	var out rootCauseLLM
-	if err := rc.LLM.ChatJSON(ctx, llm.ChatRequest{
-		Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}},
-	}, &out); err != nil {
+	if err := rc.LLM.ChatJSON(ctx, req, &out); err != nil {
 		return nil, fmt.Errorf("rootcause 结构化输出失败: %w", err)
 	}
 
