@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"aiops/pkg/config"
 	"aiops/pkg/llm"
 	"aiops/pkg/ratelimit"
+	"aiops/pkg/tasks"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
@@ -162,8 +164,32 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 		}
 	}
 
+	// 异步任务队列（C5）：工单处理经任务状态机（重试梯度/死信/崩溃恢复）。
+	var taskQueue api.TaskSubmitter
+	if db != nil {
+		if q, err := tasks.NewQueue(ctx, db); err == nil {
+			taskQueue = q
+			go q.Run(context.WithoutCancel(ctx), func(rctx context.Context, payload json.RawMessage) error {
+				var p struct {
+					TicketID string `json:"ticket_id"`
+					Resume   bool   `json:"resume"`
+				}
+				if err := json.Unmarshal(payload, &p); err != nil {
+					return err
+				}
+				if p.Resume {
+					return orch.Resume(rctx, p.TicketID)
+				}
+				return orch.Process(rctx, p.TicketID)
+			})
+		} else {
+			slog.Warn("任务队列迁移失败，降级 goroutine", "err", err)
+		}
+	}
+
 	srv := api.NewServer(a.store, orch, cfg.Jaeger.BaseURL)
 	srv.WithTools(executor, auditReader)
+	srv.WithQueue(taskQueue)
 	srv.WithAuth(authSvc)
 	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor})
 	srv.WithAdmin(promptAdmin, caseStore)

@@ -31,13 +31,14 @@ type AuditReader interface {
 type Server struct {
 	store      ticket.Store
 	orch       *orchestrator.Orchestrator
-	tools      ToolExecutor // 处置动作执行
-	obs        *ObsDeps     // 观测查询（可 nil）
-	audit      AuditReader  // 审计查询（可 nil）
-	prompts    PromptAdmin  // prompt 热更新（可 nil）
-	caseSearch CaseSearch   // 案例检索（可 nil）
-	authSvc    AuthBackend  // 鉴权后端（可 nil = 关闭）
-	jbase      string       // Jaeger 查询页基地址（trace 链接）
+	tools      ToolExecutor  // 处置动作执行
+	obs        *ObsDeps      // 观测查询（可 nil）
+	audit      AuditReader   // 审计查询（可 nil）
+	prompts    PromptAdmin   // prompt 热更新（可 nil）
+	caseSearch CaseSearch    // 案例检索（可 nil）
+	authSvc    AuthBackend   // 鉴权后端（可 nil = 关闭）
+	queue      TaskSubmitter // 异步任务队列（可 nil = goroutine 兜底）
+	jbase      string        // Jaeger 查询页基地址（trace 链接）
 }
 
 // AuthBackend 鉴权能力（auth.Service 实现）。
@@ -45,6 +46,14 @@ type AuthBackend interface {
 	Login(ctx context.Context, username, password string) (string, error)
 	Middleware() gin.HandlerFunc
 }
+
+// TaskSubmitter 异步任务提交（async.Queue 实现；nil = goroutine 兜底）。
+type TaskSubmitter interface {
+	Enqueue(ctx context.Context, ticketID, kind, idempotencyKey string, payload json.RawMessage) error
+}
+
+// WithQueue 注入异步任务队列。
+func (s *Server) WithQueue(q TaskSubmitter) *Server { s.queue = q; return s }
 
 // NewServer 构造。
 func NewServer(store ticket.Store, orch *orchestrator.Orchestrator, jaegerBaseURL string) *Server {
@@ -160,8 +169,14 @@ func (s *Server) createTicket(c *gin.Context) {
 		return
 	}
 
-	// 异步处理：脱离请求生命周期，但保持 trace 上下文连续。
-	go s.orch.Process(traceContext(c.Request.Context()), tk.ID)
+	// 异步处理：优先经任务队列（状态机/幂等/重试），无队列时 goroutine 兜底。
+	if s.queue != nil {
+		payload, _ := json.Marshal(map[string]any{"ticket_id": tk.ID, "resume": false})
+		_ = s.queue.Enqueue(context.WithoutCancel(c.Request.Context()), tk.ID, "process_ticket",
+			"process:"+tk.ID, payload)
+	} else {
+		go s.orch.Process(traceContext(c.Request.Context()), tk.ID)
+	}
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"id":      tk.ID,

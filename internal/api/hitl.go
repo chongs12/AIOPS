@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -44,7 +45,13 @@ func (s *Server) replyTicket(c *gin.Context) {
 	_ = s.store.AppendMessage(ctx, id, &ticket.Message{Role: "user", Content: req.Content, CreatedAt: time.Now()})
 
 	// 异步续跑（保持 trace 上下文）。
-	go s.orch.Resume(traceContext(c.Request.Context()), id)
+	if s.queue != nil {
+		payload, _ := json.Marshal(map[string]any{"ticket_id": id, "resume": true})
+		_ = s.queue.Enqueue(context.WithoutCancel(c.Request.Context()), id, "resume_ticket",
+			fmt.Sprintf("resume:%s:%d", id, time.Now().UnixMilli()), payload)
+	} else {
+		go s.orch.Resume(traceContext(c.Request.Context()), id)
+	}
 	c.JSON(http.StatusAccepted, gin.H{"id": id, "status": tk.Status, "message": "已收到补充，继续处理"})
 }
 
