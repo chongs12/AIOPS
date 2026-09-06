@@ -123,14 +123,17 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 
 	// 案例库（M5）：Milvus 优先，PG 兜底；无 PG 则不启用。
 	var caseStore orchestrator.CaseStore
+	var caseStoreFull cases.Store // 完整接口（含 List），供知识库列表页
 	if db != nil {
 		pgCases, err := cases.NewPG(ctx, db)
 		if err != nil {
 			slog.Warn("案例库 PG 迁移失败", "err", err)
 		} else if ms, errM := cases.NewMilvus(ctx, cfg.CaseStore.MilvusAddr, pgCases); errM == nil {
 			caseStore = ms
+			caseStoreFull = ms
 		} else {
 			caseStore = pgCases
+			caseStoreFull = pgCases
 			slog.Warn("Milvus 不可用，案例库降级 PG", "err", errM)
 		}
 	}
@@ -232,7 +235,7 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	srv.WithDeadLister(deadLister)
 	srv.WithAuth(authSvc)
 	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver})
-	srv.WithAdmin(promptAdmin, caseStore)
+	srv.WithAdmin(promptAdmin, caseStoreFull)
 	a.handler = srv.Handler()
 	return a, nil
 }
