@@ -62,6 +62,7 @@ func runProbe(args []string) {
 	// 软检查：开发依赖（make devup 可启动）与 LLM（需配置 key）。
 	p.checkRedis(ctx, cfg.Redis)
 	p.checkPostgres(cfg.Postgres)
+	p.checkMilvus(cfg.CaseStore.MilvusAddr)
 	p.checkLLM(ctx, cfg)
 
 	// OTLP 回环：flush 后从 Jaeger 查回本服务，验证 trace 全链路。
@@ -247,6 +248,19 @@ func (p *prober) checkPostgres(c config.Postgres) {
 		return
 	}
 	p.record("postgres", true, true, "可达")
+}
+
+// checkMilvus 案例库向量库连通性（软检查，故障时降级 PG）。
+func (p *prober) checkMilvus(addr string) {
+	if addr == "" {
+		p.record("milvus", true, true, "未配置，跳过")
+		return
+	}
+	if tcpReachable(addr) {
+		p.record("milvus", true, true, "%s 可达（案例库向量检索就绪）", addr)
+		return
+	}
+	p.record("milvus", true, false, "%s 不可达（案例库将降级 PG 检索）", addr)
 }
 
 // llmProvidersFromConfig 从配置构造 provider 链（跳过未注入 key 的项）。

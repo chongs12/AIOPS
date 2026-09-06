@@ -1,0 +1,139 @@
+{
+  "title": "AIOps 运维智能体",
+  "uid": "aiops-overview",
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "工单总数(5m 内创建)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(tool_calls_total)",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_AIOPS}"
+      },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "工具调用速率",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 9,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(tool_calls_total[5m])) by (tool)",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_AIOPS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "工具调用延迟 P95",
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 9,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(tool_call_duration_seconds_bucket[5m])) by (le, tool))",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_AIOPS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM Token 用量",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_tokens_total[5m])) by (provider, type)",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_AIOPS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM 调用成功率",
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_calls_total{status=\"ok\"}[5m])) / clamp_min(sum(rate(ai_calls_total[5m])), 1e-9)",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_AIOPS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "id": 5
+    }
+  ]
+}

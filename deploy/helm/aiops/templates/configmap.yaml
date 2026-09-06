@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-config
+data:
+  config.yaml: |
+    server:
+      addr: ":8090"
+      metrics_addr: ":6060"
+    telemetry:
+      enabled: true
+      service_name: aiops
+      otlp_endpoint: {{ .Values.config.otlpEndpoint | quote }}
+      sample_ratio: 1.0
+    prometheus:
+      base_url: {{ .Values.config.prometheusBaseUrl | quote }}
+      timeout_seconds: 10
+    jaeger:
+      base_url: {{ .Values.config.jaegerBaseUrl | quote }}
+      timeout_seconds: 8
+    k8s:
+      namespace: default
+      timeout_seconds: 5
+    postgres:
+      dsn: postgres://aiops:${PG_PASSWORD}@{{ .Values.config.postgresHost }}:{{ .Values.config.postgresPort }}/aiops?sslmode=disable
+    redis:
+      addr: {{ .Values.config.redisAddr | quote }}
+    case_store:
+      milvus_addr: {{ .Values.config.milvusAddr | quote }}
+    slow_query:
+      threshold_seconds: {{ .Values.config.slowQueryThresholdSeconds }}
+    llm:
+      providers:
+        - name: primary
+          base_url: {{ .Values.llm.baseUrl | default "https://ark.cn-beijing.volces.com/api/coding/v3" | quote }}
+          api_key: ${LLM_API_KEY}
+          model: {{ .Values.llm.model | default "deepseek-v4-flash" | quote }}
+          timeout_seconds: 120
+          max_tokens: 4096
+          temperature: 0.2
+      request_timeout_seconds: 180

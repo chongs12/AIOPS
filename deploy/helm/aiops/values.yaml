@@ -1,0 +1,28 @@
+image:
+  repository: aiops-server
+  tag: dev
+
+service:
+  port: 8090
+
+ingress:
+  enabled: true
+  host: aiops.localhost
+
+config:
+  prometheusBaseUrl: http://makejob-prometheus.default.svc.cluster.local:9090
+  jaegerBaseUrl: http://makejob-jaeger.default.svc.cluster.local:16686
+  otlpEndpoint: collector.default.svc.cluster.local:4317
+  postgresHost: host.docker.internal
+  postgresPort: "5433"
+  redisAddr: host.docker.internal:6380
+  milvusAddr: host.docker.internal:19530
+  slowQueryThresholdSeconds: "1"
+
+auth:
+  enabled: false
+
+secrets:
+  pgPassword: aiops_dev
+  llmApiKey: ""
+  jwtSecret: change-me-in-prod

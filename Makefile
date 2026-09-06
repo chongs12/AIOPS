@@ -30,3 +30,20 @@ fmt:
 
 vet:
 	go vet ./...
+
+# ---- C6 部署（构建镜像 → 载入 kind → Helm 安装到集群）----
+docker-build:
+	docker build -t aiops-server:dev .
+
+kind-load:
+	kind load docker-image aiops-server:dev --name makejob
+
+deploy: docker-build kind-load
+	helm upgrade --install aiops deploy/helm/aiops -n default \
+	  --set image.tag=dev \
+	  --set secrets.pgPassword=$${PG_PASSWORD:-aiops_dev} \
+	  --set secrets.llmApiKey="$${LLM_API_KEY}" \
+	  --set secrets.jwtSecret="$${JWT_SECRET:-dev-secret}"
+
+undeploy:
+	helm uninstall aiops -n default

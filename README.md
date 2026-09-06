@@ -74,6 +74,12 @@ docs/                交接文档 + ADR
 | M3 | 处置闭环：k8s.scale/rollout_undo + 人工确认门 + 审计落库 + 恢复回验 | ✅ 完成 |
 | M4 | prompt 热更新（DB 外置+两级缓存 ≤5s 生效）+ 推理回放数据与页面 | ✅ 完成 |
 | M5 | pod OOM 工单类型 + 案例库（Milvus 优先/PG 兜底）+ 相似召回 | ✅ 完成（慢查询类型与 Loki 留作后续） |
+| C1-C2 | 可观测总览/指标查询/日志查询/事件墙/部署管理/链路追踪 六页（ECharts 真实数据） | ✅ 完成 |
+| C3 | 满意度评价 + 多轮 HITL + 场景参数热更新 + 慢查询工具 | ✅ 完成 |
+| C4 | 登录鉴权（JWT，auth.enabled 默认关） | ✅ 完成 |
+| C5 | pkg/tasks 异步任务状态机（重试梯度/死信/崩溃恢复） | ✅ 完成 |
+| C6 | Dockerfile + Helm + RBAC + Grafana 仪表盘（make deploy 进集群） | ✅ 完成 |
+| C7 | probe 扩展 + 一键演示脚本 | ✅ 完成 |
 
 > 真实验收记录（2026-09-05，LLM=火山方舟 deepseek-v4-flash，数据源=PreHire kind 集群）：
 > ①5xx 故障注入→工单→根因（证据绑定，置信度 0.85）→resolved；②处置闭环：人工确认

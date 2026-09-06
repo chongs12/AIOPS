@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: aiops }
+  template:
+    metadata:
+      labels: { app: aiops }
+    spec:
+      serviceAccountName: aiops
+      hostAliases:
+        - ip: "192.168.65.2"          # kind 中 host.docker.internal 的网关地址，由 values 覆盖
+          hostnames: ["host.docker.internal"]
+      containers:
+        - name: aiops
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8090 }, { containerPort: 6060 }]
+          envFrom:
+            - secretRef: { name: aiops-secrets }
+          env:
+            - name: AIOPS_TELEMETRY_OTLP_ENDPOINT
+              value: {{ .Values.config.otlpEndpoint | quote }}
+            - name: AIOPS_PROMETHEUS_BASE_URL
+              value: {{ .Values.config.prometheusBaseUrl | quote }}
+            - name: AIOPS_JAEGER_BASE_URL
+              value: {{ .Values.config.jaegerBaseUrl | quote }}
+            - name: AIOPS_REDIS_ADDR
+              value: {{ .Values.config.redisAddr | quote }}
+            - name: AIOPS_CASESTORE_MILVUS_ADDR
+              value: {{ .Values.config.milvusAddr | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aiops
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8090 }
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8090 }
+            initialDelaySeconds: 3
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+      volumes:
+        - name: config
+          configMap: { name: aiops-config }
