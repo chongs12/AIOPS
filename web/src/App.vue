@@ -1,13 +1,16 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
+import NocScreen from './views/NocScreen.vue'
 
 const route = useRoute()
+const noChrome = () => route.meta?.chrome === false
 const pageTitle = computed(() => route.meta?.title || '')
 </script>
 
 <template>
-  <div class="app-layout">
+  <NocScreen v-if="route.meta?.chrome === false" />
+  <div v-else class="app-layout">
     <aside class="sidebar">
       <div class="sidebar-logo">
         <div class="logo-icon">AI</div>
@@ -63,6 +66,9 @@ const pageTitle = computed(() => route.meta?.title || '')
           <div class="topbar-sub">AIOps 运维工单多智能体系统 · 数据源为真实集群</div>
         </div>
         <div class="topbar-right">
+          <router-link to="/noc" style="text-decoration: none">
+            <el-button size="small" plain>🖥️ NOC 大屏</el-button>
+          </router-link>
           <span class="model-badge">🤖 deepseek-v4-flash</span>
         </div>
       </header>

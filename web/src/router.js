@@ -10,6 +10,7 @@ import TicketList from './views/TicketList.vue'
 import TicketDetail from './views/TicketDetail.vue'
 import Admin from './views/Admin.vue'
 import Login from './views/Login.vue'
+import NocScreen from './views/NocScreen.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -25,5 +26,6 @@ export default createRouter({
     { path: '/deployments', component: Deployments, meta: { title: '部署管理' } },
     { path: '/admin', component: Admin, meta: { title: '管理面' } },
     { path: '/login', component: Login, meta: { title: '登录' } },
+    { path: '/noc', component: NocScreen, meta: { title: 'NOC 大屏', chrome: false } },
   ],
 })

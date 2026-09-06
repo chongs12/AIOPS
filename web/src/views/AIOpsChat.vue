@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { renderMarkdown } from '../lib/markdown'
 import { useRouter } from 'vue-router'
 import {
   createTicket, listTickets, getTicket, listObservations, replyTicket, streamTicket,
@@ -161,7 +162,8 @@ watch(cur, scrollBottom)
                 <span class="message-time">{{ new Date(m.created_at).toLocaleTimeString('zh-CN') }}</span>
               </div>
               <div class="message-bubble">
-                <div class="message-content" :class="{ 'user-content': m.role === 'user' }">{{ m.content }}</div>
+                <div v-if="m.role === 'user'" class="message-content user-content">{{ m.content }}</div>
+                <div v-else class="message-content" v-html="renderMarkdown(m.content)" />
               </div>
             </div>
 
