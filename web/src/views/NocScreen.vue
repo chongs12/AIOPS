@@ -1,6 +1,8 @@
 <script setup>
 // NOC 指挥大屏：独立深色路由页（不改动浅色页面），F11 即投屏态。
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+const router = useRouter()
 import echarts from '../lib/echarts'
 import { obsOverview, obsQuery, listK8sEvents } from '../api'
 
@@ -75,6 +77,7 @@ onUnmounted(() => {
       <div class="noc-brand">AIOps · NOC 运维指挥</div>
       <div class="noc-clock">{{ clock }}</div>
       <div class="noc-live"><span class="pulse" /> LIVE</div>
+      <router-link to="/" class="noc-back" title="返回控制台">← 控制台</router-link>
     </header>
 
     <div class="noc-stats">
@@ -130,7 +133,13 @@ onUnmounted(() => {
 .noc-head { display: flex; align-items: center; gap: 18px; }
 .noc-brand { font-size: 20px; font-weight: 700; color: #e8f2ff; letter-spacing: 2px; }
 .noc-clock { font-family: ui-monospace, monospace; font-size: 22px; color: #4da3ff; }
-.noc-live { margin-left: auto; font-size: 12px; font-weight: 700; color: #ff5c6c; letter-spacing: 1px; }
+.noc-live { font-size: 12px; font-weight: 700; color: #ff5c6c; letter-spacing: 1px; }
+.noc-back {
+  margin-left: auto; font-size: 12.5px; color: #8fb6e8; text-decoration: none;
+  border: 1px solid #1d344d; border-radius: 7px; padding: 5px 14px;
+  background: rgba(15, 31, 54, 0.6); transition: all 0.16s ease;
+}
+.noc-back:hover { color: #cfe3ff; border-color: #2c4a6e; background: #12233d; }
 .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff5c6c; margin-right: 6px; animation: pulse 1.4s infinite; }
 .noc-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .ncell { background: #0f1f36; border: 1px solid #1d344d; border-radius: 12px; padding: 14px 18px; }
