@@ -17,12 +17,18 @@ import (
 	"aiops/internal/evidence"
 	"aiops/internal/ticket"
 	"aiops/pkg/llm"
+	"aiops/pkg/notify"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// TaskEnqueuer 异步任务入队（tasks.Queue 实现）。
+type TaskEnqueuer interface {
+	Enqueue(ctx context.Context, ticketID, kind, idempotencyKey string, payload json.RawMessage) error
+}
 
 // CaseStore 案例库能力（M5：相似召回 + 已解决沉淀）。
 type CaseStore interface {
@@ -40,6 +46,9 @@ type Orchestrator struct {
 	prompts    llm.TemplateStore
 	cases      CaseStore
 	sceneCfgs  agent.SceneConfigSource
+	queue      TaskEnqueuer
+	verifyCfg  VerifyConfig
+	notifier   *notify.Notifier
 	maxRounds  int
 	confThresh float64
 	tracer     trace.Tracer
@@ -56,6 +65,9 @@ type Options struct {
 	ConfidenceThreshold float64                 // 低于则转人工，默认 0.6
 	CaseStore           CaseStore               // 可 nil
 	SceneCfgs           agent.SceneConfigSource // 场景参数热更新来源，可 nil
+	Queue               TaskEnqueuer            // 异步队列（复查任务用），可 nil
+	VerifyCfg           *VerifyConfig           // 复查配置，nil 用默认
+	Notifier            *notify.Notifier        // 终态通知 webhook，可 nil
 }
 
 // New 构造编排器。
@@ -69,9 +81,14 @@ func New(opts Options) *Orchestrator {
 	if opts.Prompts == nil {
 		opts.Prompts = agent.NewBuiltinPromptStore()
 	}
+	verifyCfg := DefaultVerifyConfig()
+	if opts.VerifyCfg != nil {
+		verifyCfg = *opts.VerifyCfg
+	}
 	return &Orchestrator{
 		store: opts.Store, agents: opts.Agents, tools: opts.Tools,
 		llm: opts.LLM, prompts: opts.Prompts, cases: opts.CaseStore, sceneCfgs: opts.SceneCfgs,
+		queue: opts.Queue, notifier: opts.Notifier, verifyCfg: verifyCfg,
 		maxRounds: opts.MaxRounds, confThresh: opts.ConfidenceThreshold,
 		tracer: otel.Tracer("aiops/internal/orchestrator"),
 	}
@@ -255,6 +272,7 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, mode proces
 		if err := o.store.UpdateTicket(ctx, tk); err != nil {
 			return err
 		}
+		o.notify(ctx, tk, "ticket.escalated")
 		span.SetAttributes(attribute.String("ticket.outcome", "escalated"))
 		return nil
 	}
@@ -275,6 +293,7 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, mode proces
 		attribute.String("ticket.outcome", "resolved"),
 		attribute.Float64("rca.confidence", rca.Confidence),
 	)
+	o.notify(ctx, tk, "ticket.resolved")
 
 	// 案例沉淀（M5）：已解决工单异步入库，供后续相似召回。
 	if o.cases != nil {
@@ -291,6 +310,22 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, mode proces
 		}()
 	}
 	return nil
+}
+
+// notify 终态 webhook 通知（P4；失败不阻塞）。
+func (o *Orchestrator) notify(ctx context.Context, tk *ticket.Ticket, event string) {
+	if o.notifier == nil || !o.notifier.Enabled() {
+		return
+	}
+	go o.notifier.Notify(context.WithoutCancel(ctx), notify.Payload{
+		Event: event, TicketID: tk.ID, Title: tk.Title, Status: tk.Status,
+		Confidence: func() float64 {
+			if tk.Report != nil {
+				return tk.Report.Confidence
+			}
+			return 0
+		}(),
+	})
 }
 
 // summarizeCases 案例召回摘要（供黑板与 LLM）。

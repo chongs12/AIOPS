@@ -39,6 +39,7 @@ type Server struct {
 	authSvc    AuthBackend   // 鉴权后端（可 nil = 关闭）
 	queue      TaskSubmitter // 异步任务队列（可 nil = goroutine 兜底）
 	dead       DeadLister    // 死信查询（可 nil）
+	verifier   Verifier      // 恢复复查调度（可 nil）
 	jbase      string        // Jaeger 查询页基地址（trace 链接）
 }
 
@@ -55,6 +56,14 @@ type TaskSubmitter interface {
 
 // WithQueue 注入异步任务队列。
 func (s *Server) WithQueue(q TaskSubmitter) *Server { s.queue = q; return s }
+
+// Verifier 恢复复查调度（orchestrator 实现）。
+type Verifier interface {
+	ScheduleVerify(ctx context.Context, ticketID string)
+}
+
+// WithVerifier 注入复查调度。
+func (s *Server) WithVerifier(v Verifier) *Server { s.verifier = v; return s }
 
 // DeadLister 死信查询（tasks.Queue 实现；返回预序列化 JSON）。
 type DeadLister interface {

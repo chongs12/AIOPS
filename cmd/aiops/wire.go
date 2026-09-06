@@ -24,6 +24,7 @@ import (
 	"aiops/pkg/cache"
 	"aiops/pkg/config"
 	"aiops/pkg/llm"
+	"aiops/pkg/notify"
 	"aiops/pkg/ratelimit"
 	"aiops/pkg/tasks"
 
@@ -167,11 +168,31 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 		return ""
 	}
 
+	// 异步任务队列（先于编排器创建：编排器需要入队复查任务）。
+	taskEnqueuer := orchestrator.TaskEnqueuer(nil)
+	var taskQueue *tasks.Queue
+	var deadLister api.DeadLister
+	if db != nil {
+		if q, err := tasks.NewQueue(ctx, db); err == nil {
+			taskQueue = q
+			deadLister = q
+			taskEnqueuer = q
+		} else {
+			slog.Warn("任务队列迁移失败，降级 goroutine", "err", err)
+		}
+	}
+
 	// Agent + 编排。
 	agents := agent.NewAll(agent.Deps{LLM: llmc, PodNamer: namer, Services: cfg.K8s.Services})
 	orch := orchestrator.New(orchestrator.Options{
 		Store: a.store, Agents: agents, Tools: executor, LLM: llmc, CaseStore: caseStore,
 		Prompts: runtimePrompts, SceneCfgs: runtimeSceneCfg,
+		Queue:    taskEnqueuer,
+		Notifier: notify.NewNotifier(cfg.Notify.WebhookURL),
+		VerifyCfg: &orchestrator.VerifyConfig{
+			WaitSeconds: cfg.Verify.WaitSeconds, Threshold: cfg.Verify.Threshold,
+			Window: "2m", RateTemplate: "http_5xx_rate",
+		},
 	})
 
 	// 鉴权（默认关闭）。
@@ -185,14 +206,13 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 		}
 	}
 
-	// 异步任务队列（C5）：工单处理经任务状态机（重试梯度/死信/崩溃恢复）。
-	var taskQueue api.TaskSubmitter
-	var deadLister api.DeadLister
-	if db != nil {
-		if q, err := tasks.NewQueue(ctx, db); err == nil {
-			taskQueue = q
-			deadLister = q
-			go q.Run(context.WithoutCancel(ctx), func(rctx context.Context, payload json.RawMessage) error {
+	// worker 启动（队列已在编排器之前创建）：按 kind 分派 process/resume/verify。
+	if taskQueue != nil {
+		go taskQueue.Run(context.WithoutCancel(ctx), func(rctx context.Context, kind string, payload json.RawMessage) error {
+			switch kind {
+			case "verify_recovery":
+				return orch.RunVerifyTask(rctx, payload)
+			default:
 				var p struct {
 					TicketID string `json:"ticket_id"`
 					Resume   bool   `json:"resume"`
@@ -201,15 +221,14 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 					return err
 				}
 				return orch.Handle(rctx, p.TicketID, p.Resume)
-			})
-		} else {
-			slog.Warn("任务队列迁移失败，降级 goroutine", "err", err)
-		}
+			}
+		})
 	}
 
 	srv := api.NewServer(a.store, orch, cfg.Jaeger.BaseURL)
 	srv.WithTools(executor, auditReader)
 	srv.WithQueue(taskQueue)
+	srv.WithVerifier(orch)
 	srv.WithDeadLister(deadLister)
 	srv.WithAuth(authSvc)
 	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver})

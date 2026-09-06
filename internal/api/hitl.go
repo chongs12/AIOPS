@@ -174,6 +174,10 @@ func (s *Server) actionTicket(c *gin.Context) {
 		Role: "agent", Agent: "action",
 		Content: fmt.Sprintf("处置执行结果: %s（%s）", res.Status, res.DegradedReason), CreatedAt: time.Now(),
 	})
+	// P4: 处置成功后自动安排恢复复查（复查通过自动关单）。
+	if res.Status == "ok" && s.verifier != nil {
+		s.verifier.ScheduleVerify(context.WithoutCancel(ctx), id)
+	}
 	c.JSON(http.StatusOK, res)
 }
 

@@ -18,19 +18,32 @@ const envPrefix = "AIOPS_"
 // Config 全量配置。字段 env 标签用于环境变量覆盖，
 // 如 Server.Addr 的覆盖变量为 AIOPS_SERVER_ADDR。
 type Config struct {
-	Server     Server       `yaml:"server" env:"SERVER"`
-	Telemetry  Telemetry    `yaml:"telemetry" env:"TELEMETRY"`
-	Prometheus Prometheus   `yaml:"prometheus" env:"PROMETHEUS"`
-	Jaeger     Jaeger       `yaml:"jaeger" env:"JAEGER"`
-	K8s        K8s          `yaml:"k8s" env:"K8S"`
-	Postgres   Postgres     `yaml:"postgres" env:"POSTGRES"`
-	Redis      Redis        `yaml:"redis" env:"REDIS"`
-	Cache      Cache        `yaml:"cache" env:"CACHE"`
-	RateLimit  RateLimit    `yaml:"ratelimit" env:"RATELIMIT"`
-	LLM        LLM          `yaml:"llm" env:"LLM"`
-	CaseStore  CaseStoreCfg `yaml:"case_store" env:"CASESTORE"`
-	SlowQuery  SlowQueryCfg `yaml:"slow_query" env:"SLOWQUERY"`
-	Auth       AuthCfg      `yaml:"auth" env:"AUTH"`
+	Server     Server        `yaml:"server" env:"SERVER"`
+	Telemetry  Telemetry     `yaml:"telemetry" env:"TELEMETRY"`
+	Prometheus Prometheus    `yaml:"prometheus" env:"PROMETHEUS"`
+	Jaeger     Jaeger        `yaml:"jaeger" env:"JAEGER"`
+	K8s        K8s           `yaml:"k8s" env:"K8S"`
+	Postgres   Postgres      `yaml:"postgres" env:"POSTGRES"`
+	Redis      Redis         `yaml:"redis" env:"REDIS"`
+	Cache      Cache         `yaml:"cache" env:"CACHE"`
+	RateLimit  RateLimit     `yaml:"ratelimit" env:"RATELIMIT"`
+	LLM        LLM           `yaml:"llm" env:"LLM"`
+	CaseStore  CaseStoreCfg  `yaml:"case_store" env:"CASESTORE"`
+	SlowQuery  SlowQueryCfg  `yaml:"slow_query" env:"SLOWQUERY"`
+	Auth       AuthCfg       `yaml:"auth" env:"AUTH"`
+	Notify     NotifyCfg     `yaml:"notify" env:"NOTIFY"`
+	Verify     VerifyCfgYaml `yaml:"verify_recovery" env:"VERIFY"`
+}
+
+// NotifyCfg 通知配置。
+type NotifyCfg struct {
+	WebhookURL string `yaml:"webhook_url" env:"WEBHOOK_URL"`
+}
+
+// VerifyCfgYaml 恢复复查配置（yaml 层）。
+type VerifyCfgYaml struct {
+	WaitSeconds int     `yaml:"wait_seconds" env:"WAIT_SECONDS"`
+	Threshold   float64 `yaml:"threshold" env:"THRESHOLD"`
 }
 
 // AuthCfg 鉴权配置：默认关闭，启用后管理面/写操作强制 JWT。
@@ -169,6 +182,8 @@ func Default() *Config {
 		CaseStore: CaseStoreCfg{MilvusAddr: "localhost:19530"},
 		SlowQuery: SlowQueryCfg{ThresholdSeconds: 1},
 		Auth:      AuthCfg{Enabled: false, JWTSecret: "${JWT_SECRET}", TTLHours: 24},
+		Notify:    NotifyCfg{},
+		Verify:    VerifyCfgYaml{WaitSeconds: 60, Threshold: 0.05},
 		LLM: LLM{
 			Providers: []LLMProvider{{
 				Name:           "glm",

@@ -30,8 +30,8 @@ var retryGradient = []time.Duration{20 * time.Second, 30 * time.Second, 45 * tim
 // maxAttempts 最大尝试次数（含首次）。
 const maxAttempts = 4
 
-// Handler 任务执行函数；返回 error 触发重试。
-type Handler func(ctx context.Context, payload json.RawMessage) error
+// Handler 任务执行函数（kind 用于分派）；返回 error 触发重试。
+type Handler func(ctx context.Context, kind string, payload json.RawMessage) error
 
 // Task 任务记录。
 type Task struct {
@@ -127,7 +127,7 @@ WHERE id = (
 
 	runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	runErr := q.handler(runCtx, payload)
+	runErr := q.handler(runCtx, kind, payload)
 
 	if runErr == nil {
 		_, _ = q.db.ExecContext(ctx,
