@@ -65,8 +65,15 @@ async function reload() {
   scrollBottom()
 }
 
-function scrollBottom() {
-  nextTick(() => { const el = listEl.value; if (el) el.scrollTop = el.scrollHeight })
+// 自动滚底策略（对齐 ChatGPT/DeepSeek）：
+// 仅当用户本来就贴在底部（<80px）或显式要求时才滚动，避免打断用户查看历史。
+function scrollBottom(force = false) {
+  nextTick(() => {
+    const el = listEl.value
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (force || nearBottom) el.scrollTop = el.scrollHeight
+  })
 }
 
 // 发送：无会话 / 会话已终态 → 新建工单会话；awaiting_info → 断点续跑
@@ -83,6 +90,7 @@ async function send() {
   const d = await createTicket({ title: text.slice(0, 24), content: text, reporter: 'chat' })
   await loadSessions()
   await selectSession(d.id)
+  scrollBottom(true)
 }
 
 function onKeydown(e) {
@@ -98,7 +106,7 @@ const toolEvents = () => observations.value.map(o => ({
 
 onMounted(async () => { await loadSessions(); if (sessions.value.length) await selectSession(sessions.value[0].id) })
 onUnmounted(() => es && es.close())
-watch(cur, scrollBottom)
+watch(cur, () => scrollBottom(true))
 </script>
 
 <template>
@@ -261,7 +269,7 @@ watch(cur, scrollBottom)
 <style scoped>
 .aiops-page { display: flex; gap: 14px; height: calc(100vh - var(--header-h) - 40px); overflow: hidden; }
 .aiops-session-list {
-  width: 240px; flex-shrink: 0; background: var(--card-bg);
+  width: 240px; flex-shrink: 0; min-height: 0; background: var(--card-bg);
   border-radius: var(--card-radius); box-shadow: var(--card-shadow);
   padding: 10px; overflow-y: auto;
 }
@@ -291,8 +299,14 @@ watch(cur, scrollBottom)
 .environment-chip.bad { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
 @keyframes pulse { 50% { opacity: 0.65; } }
 
-.message-stage { flex: 1; min-height: 0; }
-.aiops-message-list { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.message-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.aiops-message-list {
+  flex: 1; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  scroll-behavior: smooth;
+}
 .message-empty { margin: auto; max-width: 400px; text-align: center; }
 .empty-title { font-size: 17px; font-weight: 700; color: #0f172a; }
 .empty-copy { margin-top: 8px; color: #64748b; line-height: 1.7; font-size: 12.5px; }
