@@ -11,6 +11,7 @@ import (
 	"aiops/internal/agent"
 	"aiops/internal/api"
 	"aiops/internal/audit"
+	"aiops/internal/auth"
 	"aiops/internal/cases"
 	"aiops/internal/orchestrator"
 	"aiops/internal/ticket"
@@ -150,8 +151,20 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 		Store: a.store, Agents: agents, Tools: executor, LLM: llmc, CaseStore: caseStore,
 	})
 
+	// 鉴权（默认关闭）。
+	var authSvc api.AuthBackend
+	if cfg.Auth.Enabled && db != nil {
+		if as, err := auth.New(ctx, db, cfg.Auth.JWTSecret, time.Duration(cfg.Auth.TTLHours)*time.Hour); err == nil {
+			authSvc = as
+			slog.Info("登录鉴权已启用（管理面/写操作需 JWT）")
+		} else {
+			slog.Warn("鉴权初始化失败，降级为关闭", "err", err)
+		}
+	}
+
 	srv := api.NewServer(a.store, orch, cfg.Jaeger.BaseURL)
 	srv.WithTools(executor, auditReader)
+	srv.WithAuth(authSvc)
 	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor})
 	srv.WithAdmin(promptAdmin, caseStore)
 	a.handler = srv.Handler()

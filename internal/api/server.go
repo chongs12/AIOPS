@@ -36,7 +36,14 @@ type Server struct {
 	audit      AuditReader  // 审计查询（可 nil）
 	prompts    PromptAdmin  // prompt 热更新（可 nil）
 	caseSearch CaseSearch   // 案例检索（可 nil）
+	authSvc    AuthBackend  // 鉴权后端（可 nil = 关闭）
 	jbase      string       // Jaeger 查询页基地址（trace 链接）
+}
+
+// AuthBackend 鉴权能力（auth.Service 实现）。
+type AuthBackend interface {
+	Login(ctx context.Context, username, password string) (string, error)
+	Middleware() gin.HandlerFunc
 }
 
 // NewServer 构造。
@@ -89,24 +96,21 @@ func (s *Server) Handler() http.Handler {
 		v1.GET("/tickets/:id", s.getTicket)
 		v1.GET("/tickets/:id/messages", s.listMessages)
 		v1.GET("/tickets/:id/observations", s.listObservations)
-		v1.POST("/tickets/:id/reply", s.replyTicket)    // HITL：补充信息，断点续跑
-		v1.PATCH("/tickets/:id/rating", s.rateTicket)   // 满意度评价
-		v1.GET("/tickets/:id/stream", s.streamTicket)   // SSE 推流
-		v1.POST("/tickets/:id/actions", s.actionTicket) // 处置动作（白名单+人工确认）
-		v1.GET("/tickets/:id/audit", s.listAudit)       // 审计记录
+		v1.POST("/tickets/:id/reply", s.replyTicket)  // HITL：补充信息，断点续跑
+		v1.PATCH("/tickets/:id/rating", s.rateTicket) // 满意度评价
+		v1.GET("/tickets/:id/stream", s.streamTicket) // SSE 推流
+		v1.GET("/tickets/:id/audit", s.listAudit)     // 审计记录
 		admin := v1.Group("/admin")
 		{
 			admin.GET("/prompts", s.listPrompts)
-			admin.PUT("/prompts/:scene", s.updatePrompt)
-			admin.DELETE("/prompts/:scene", s.resetPrompt)
 		}
 		v1.GET("/cases/search", s.searchCases) // M5 相似案例检索
+
 		k8sGrp := v1.Group("/k8s")
 		{
 			k8sGrp.GET("/deployments", s.listK8sDeployments)
 			k8sGrp.GET("/events", s.listK8sEvents)
 			k8sGrp.GET("/logs", s.queryK8sLogs)
-			k8sGrp.POST("/actions", s.k8sAction)
 		}
 		v1.GET("/jaeger/services", s.jaegerServices)
 		v1.GET("/jaeger/traces", s.jaegerTraces)
@@ -116,6 +120,19 @@ func (s *Server) Handler() http.Handler {
 			obs.GET("/overview", s.overview)
 			obs.POST("/query", s.runQuery)
 		}
+	}
+
+	// 受保护组：auth.enabled=true 时要求 Bearer；关闭时中间件为空（行为不变）。
+	protected := v1.Group("", s.protectedMiddleware()...)
+	{
+		protected.POST("/tickets/:id/actions", s.actionTicket)
+		protected.POST("/k8s/actions", s.k8sAction)
+		protected.PUT("/admin/prompts/:scene", s.updatePrompt)
+		protected.DELETE("/admin/prompts/:scene", s.resetPrompt)
+	}
+	if s.authSvc != nil {
+		v1.POST("/auth/login", s.Login)
+		protected.GET("/auth/me", s.Me)
 	}
 	return r
 }

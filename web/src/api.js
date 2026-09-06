@@ -2,6 +2,23 @@ import axios from 'axios'
 
 const http = axios.create({ timeout: 30000 })
 
+// 鉴权：附加 token；401 时跳登录页（auth.enabled=false 时不会出现 401）
+http.interceptors.request.use(cfg => {
+  const t = localStorage.getItem('aiops_token')
+  if (t) cfg.headers.Authorization = 'Bearer ' + t
+  return cfg
+})
+http.interceptors.response.use(
+  r => r,
+  err => {
+    if (err.response?.status === 401 && !location.pathname.startsWith('/login')) {
+      localStorage.removeItem('aiops_token')
+      location.href = '/login?next=' + encodeURIComponent(location.pathname)
+    }
+    return Promise.reject(err)
+  },
+)
+
 // ---- 工单 ----
 export const createTicket = (data) => http.post('/api/v1/tickets', data).then(r => r.data)
 export const listTickets = (limit = 50) => http.get('/api/v1/tickets', { params: { limit } }).then(r => r.data)

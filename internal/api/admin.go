@@ -25,6 +25,43 @@ type CaseSearch interface {
 	Backend() string
 }
 
+// WithAuth 注入鉴权（nil = 关闭，全部接口开放）。
+func (s *Server) WithAuth(a AuthBackend) *Server {
+	s.authSvc = a
+	return s
+}
+
+// protectedMiddleware 受保护组的中间件集合（鉴权关闭时为空，行为与关闭前完全一致）。
+func (s *Server) protectedMiddleware() []gin.HandlerFunc {
+	if s.authSvc == nil {
+		return nil
+	}
+	return []gin.HandlerFunc{s.authSvc.Middleware()}
+}
+
+// Login 登录换 JWT。
+func (s *Server) Login(c *gin.Context) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Username == "" || req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号与密码必填"})
+		return
+	}
+	token, err := s.authSvc.Login(c.Request.Context(), req.Username, req.Password)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"token": token, "token_type": "Bearer"})
+}
+
+// Me 当前用户（校验令牌有效性）。
+func (s *Server) Me(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"username": c.GetString("username"), "role": c.GetString("role")})
+}
+
 // WithAdmin 注入管理面与案例库能力。
 func (s *Server) WithAdmin(p PromptAdmin, cs CaseSearch) *Server {
 	s.prompts = p

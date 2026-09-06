@@ -9,6 +9,7 @@ import TraceObservability from './views/TraceObservability.vue'
 import TicketList from './views/TicketList.vue'
 import TicketDetail from './views/TicketDetail.vue'
 import Admin from './views/Admin.vue'
+import Login from './views/Login.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -23,5 +24,6 @@ export default createRouter({
     { path: '/trace', component: TraceObservability, meta: { title: '链路追踪' } },
     { path: '/deployments', component: Deployments, meta: { title: '部署管理' } },
     { path: '/admin', component: Admin, meta: { title: '管理面' } },
+    { path: '/login', component: Login, meta: { title: '登录' } },
   ],
 })
