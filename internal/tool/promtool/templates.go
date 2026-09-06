@@ -156,5 +156,39 @@ func BuiltinTemplates() []Template {
 	}
 }
 
+// ListForAPI 模板清单的对外视图（api.TemplateView 同构，此处独立定义避免反向依赖）。
+func (l *Lib) ListForAPI() []APIView {
+	ts := l.List()
+	out := make([]APIView, 0, len(ts))
+	for _, t := range ts {
+		v := APIView{Name: t.Name, Desc: t.Desc, Expr: t.Expr}
+		for _, p := range t.Params {
+			v.Params = append(v.Params, APIParam{
+				Name: p.Name, Required: p.Required, Default: p.Default,
+				Desc: p.Desc, Pattern: p.Pattern,
+			})
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+// APIView 模板 API 视图。
+type APIView struct {
+	Name   string     `json:"name"`
+	Desc   string     `json:"desc"`
+	Expr   string     `json:"expr"`
+	Params []APIParam `json:"params,omitempty"`
+}
+
+// APIParam 模板参数 API 视图。
+type APIParam struct {
+	Name     string `json:"name"`
+	Required bool   `json:"required,omitempty"`
+	Default  string `json:"default,omitempty"`
+	Desc     string `json:"desc,omitempty"`
+	Pattern  string `json:"pattern,omitempty"`
+}
+
 // BuiltinLib 内置模板库。
 func BuiltinLib() *Lib { return NewLib(BuiltinTemplates()) }

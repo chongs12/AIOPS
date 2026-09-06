@@ -36,6 +36,39 @@ type queryResponse struct {
 	} `json:"data"`
 }
 
+// QueryRange 执行区间查询，返回 matrix 结果（JSON）。
+func (c *Client) QueryRange(ctx context.Context, promql string, start, end time.Time, step time.Duration) (json.RawMessage, error) {
+	q := url.Values{}
+	q.Set("query", promql)
+	q.Set("start", fmt.Sprintf("%d", start.Unix()))
+	q.Set("end", fmt.Sprintf("%d", end.Unix()))
+	q.Set("step", fmt.Sprintf("%ds", int(step.Seconds())))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/api/v1/query_range?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("prometheus 请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("prometheus HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))
+	}
+	var qr queryResponse
+	if err := json.Unmarshal(body, &qr); err != nil {
+		return nil, fmt.Errorf("prometheus 响应解析失败: %w", err)
+	}
+	if qr.Status != "success" {
+		return nil, fmt.Errorf("prometheus 查询错误: %s", qr.Error)
+	}
+	return qr.Data.Result, nil
+}
+
 // QueryInstant 执行即时查询（at 为零值表示 now）。
 func (c *Client) QueryInstant(ctx context.Context, promql string, at time.Time) (json.RawMessage, error) {
 	q := url.Values{}

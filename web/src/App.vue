@@ -18,18 +18,27 @@ const pageTitle = computed(() => route.meta?.title || '')
       </div>
 
       <el-menu router :default-active="route.path" class="sidebar-nav">
-        <el-menu-item index="/">
-          <el-icon><ChatDotRound /></el-icon>
-          <span>AI 对话</span>
-        </el-menu-item>
-        <el-menu-item index="/tickets">
-          <el-icon><Odometer /></el-icon>
-          <span>工作台</span>
-        </el-menu-item>
-        <el-menu-item index="/admin">
-          <el-icon><Setting /></el-icon>
-          <span>管理面</span>
-        </el-menu-item>
+        <el-menu-item-group title="智能运维">
+          <el-menu-item index="/">
+            <el-icon><ChatDotRound /></el-icon><span>AI 对话</span>
+          </el-menu-item>
+          <el-menu-item index="/tickets">
+            <el-icon><Odometer /></el-icon><span>工作台</span>
+          </el-menu-item>
+        </el-menu-item-group>
+        <el-menu-item-group title="可观测">
+          <el-menu-item index="/observability">
+            <el-icon><DataLine /></el-icon><span>总览</span>
+          </el-menu-item>
+          <el-menu-item index="/metrics">
+            <el-icon><TrendCharts /></el-icon><span>指标查询</span>
+          </el-menu-item>
+        </el-menu-item-group>
+        <el-menu-item-group title="平台管理">
+          <el-menu-item index="/admin">
+            <el-icon><Setting /></el-icon><span>管理面</span>
+          </el-menu-item>
+        </el-menu-item-group>
       </el-menu>
 
       <div class="sidebar-footer">多 Agent 证据化推理<br>工具降级 · 人工确认</div>

@@ -64,7 +64,14 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	// 工具层。
 	reg := tool.NewRegistry()
 	promClient := promtool.NewClient(cfg.Prometheus.BaseURL, time.Duration(cfg.Prometheus.TimeoutSeconds)*time.Second)
-	if err := reg.Register(promtool.NewQueryTool(promClient, promtool.BuiltinLib())); err != nil {
+	lib := promtool.BuiltinLib()
+	if err := reg.Register(promtool.NewQueryTool(promClient, lib)); err != nil {
+		return nil, err
+	}
+	if err := reg.Register(promtool.NewRangeTool(promClient, lib)); err != nil {
+		return nil, err
+	}
+	if err := reg.Register(promtool.NewFreeTool(promClient)); err != nil {
 		return nil, err
 	}
 	// K8s 工具（日志/事件/Pod 状态只读 + 扩缩容/回滚变更类）。失败不阻塞启动。
@@ -137,6 +144,7 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 
 	srv := api.NewServer(a.store, orch, cfg.Jaeger.BaseURL)
 	srv.WithTools(executor, auditReader)
+	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor})
 	srv.WithAdmin(promptAdmin, caseStore)
 	a.handler = srv.Handler()
 	return a, nil

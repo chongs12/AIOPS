@@ -43,3 +43,10 @@ export const agentLabel = (a) => ({
   intent: '🧭 意图识别', metrics: '📊 指标检索', log: '📜 日志解析',
   rootcause: '🔍 根因推理', reply: '📝 报告生成', action: '⚡ 处置执行',
 }[a] || a || '系统')
+
+// ---- 可观测 ----
+export const listObsTemplates = () => http.get('/api/v1/observability/templates').then(r => r.data)
+export const obsOverview = () => http.get('/api/v1/observability/overview').then(r => r.data)
+export const obsQuery = (payload) => http.post('/api/v1/observability/query', payload).then(r => r.data)
+export const KNOWN_SERVICES = ['gateway', 'user', 'membership', 'question', 'interview', 'realtime',
+  'growth', 'plan', 'companion', 'community', 'learning-archive', 'ai-gateway', 'rag', 'coderunner', 'admin']

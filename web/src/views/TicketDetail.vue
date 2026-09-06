@@ -3,8 +3,9 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   getTicket, listObservations, listAudit, replyTicket, runAction, streamTicket,
-  statusType, statusLabel, typeLabel, agentLabel,
+  statusType, statusLabel, typeLabel, agentLabel, obsQuery,
 } from '../api'
+import echarts from '../lib/echarts'
 
 const route = useRoute()
 const id = route.params.id
@@ -15,6 +16,43 @@ const input = ref('')
 const busy = ref(false)
 const live = ref(false)
 let es = null
+const trendEl = ref(null)
+let trendChart = null
+
+// 故障时间窗错误率趋势（真实 range 查询 + 窗口高亮）。
+async function loadTrend() {
+  if (!tk.value || !trendEl.value) return
+  const win = (tk.value.entities?.window_minutes || 30) * 60 * 1000
+  const end = Date.now() + 5 * 60 * 1000
+  const start = new Date(tk.value.created_at).getTime() - win
+  const step = Math.max(15, Math.floor((end - start) / 1000 / 120))
+  try {
+    const res = await obsQuery({
+      template: 'http_5xx_rate',
+      start: new Date(start).toISOString(), end: new Date(end).toISOString(), step_seconds: step,
+    })
+    if (res.status !== 'ok') return
+    const rows = res.data || []
+    if (!trendChart) trendChart = echarts.init(trendEl.value)
+    const wStart = new Date(tk.value.created_at).getTime() - win
+    const wEnd = new Date(tk.value.created_at).getTime()
+    trendChart.setOption({
+      grid: { left: 50, right: 16, top: 24, bottom: 26 },
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'time', axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', axisLabel: { fontSize: 10 }, splitLine: { lineStyle: { color: '#eef2f7' } } },
+      series: [{
+        name: '5xx 速率', type: 'line', smooth: true, showSymbol: false,
+        data: (rows[0]?.values || []).map(v => [v[0] * 1000, parseFloat(v[1])]),
+        areaStyle: { opacity: 0.08 },
+        markArea: {
+          itemStyle: { color: 'rgba(239,68,68,0.07)' },
+          data: [[{ xAxis: wStart, name: '故障时间窗' }, { xAxis: wEnd }]],
+        },
+      }],
+    }, true)
+  } catch { /* 趋势图为增强视图，失败不阻塞详情 */ }
+}
 
 async function load() {
   tk.value = await getTicket(id)
@@ -87,7 +125,7 @@ async function execAction() {
 
 import { ElMessage } from 'element-plus'
 
-onMounted(async () => { await load(); connect() })
+onMounted(async () => { await load(); connect(); loadTrend() })
 onUnmounted(() => es && es.close())
 </script>
 
@@ -193,8 +231,16 @@ onUnmounted(() => es && es.close())
       </div>
     </div>
 
-    <!-- 观察集 + 审计 -->
+    <!-- 故障窗错误率趋势 -->
     <div class="card" style="margin-top: 18px">
+      <div class="card-title">📉 5xx 错误率趋势（红色区域 = 工单故障时间窗）
+        <span class="muted" style="margin-left: 8px">真实 Prometheus range 查询</span>
+      </div>
+      <div ref="trendEl" style="height: 220px"></div>
+    </div>
+
+    <!-- 观察集 + 审计 -->
+    <div class="card">
       <div class="card-title">🔬 观察集（真实工具查询）</div>
       <el-collapse>
         <el-collapse-item v-for="o in observations" :key="o.id" :name="o.id">

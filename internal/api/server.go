@@ -32,6 +32,7 @@ type Server struct {
 	store      ticket.Store
 	orch       *orchestrator.Orchestrator
 	tools      ToolExecutor // 处置动作执行
+	obs        *ObsDeps     // 观测查询（可 nil）
 	audit      AuditReader  // 审计查询（可 nil）
 	prompts    PromptAdmin  // prompt 热更新（可 nil）
 	caseSearch CaseSearch   // 案例检索（可 nil）
@@ -99,6 +100,12 @@ func (s *Server) Handler() http.Handler {
 			admin.DELETE("/prompts/:scene", s.resetPrompt)
 		}
 		v1.GET("/cases/search", s.searchCases) // M5 相似案例检索
+		obs := v1.Group("/observability")
+		{
+			obs.GET("/templates", s.listTemplates)
+			obs.GET("/overview", s.overview)
+			obs.POST("/query", s.runQuery)
+		}
 	}
 	return r
 }
