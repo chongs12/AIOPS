@@ -37,6 +37,20 @@ func (s *Server) WithObservability(obs *ObsDeps) *Server {
 	return s
 }
 
+// getObservation 单条观察完整视图（含原始 data，供证据抽屉）。
+func (s *Server) getObservation(c *gin.Context) {
+	o, err := s.store.GetObservation(c.Request.Context(), c.Param("id"), c.Param("oid"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id": o.ID, "source": o.Source, "query": o.Query, "window": o.Window,
+		"summary": o.Summary, "status": o.Status,
+		"data": o.Data, "created_at": o.CreatedAt,
+	})
+}
+
 // listTemplates 模板清单。
 func (s *Server) listTemplates(c *gin.Context) {
 	if s.obs == nil || s.obs.Templates == nil {

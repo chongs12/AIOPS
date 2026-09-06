@@ -1,11 +1,15 @@
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   getTicket, listObservations, listAudit, replyTicket, runAction, streamTicket,
   statusType, statusLabel, typeLabel, agentLabel, obsQuery, rateTicket,
 } from '../api'
 import echarts from '../lib/echarts'
+import ConfidenceGauge from '../components/ConfidenceGauge.vue'
+import EvidenceTimeline from '../components/EvidenceTimeline.vue'
+import HypothesisFlow from '../components/HypothesisFlow.vue'
+import EvidenceDrawer from '../components/EvidenceDrawer.vue'
 
 const route = useRoute()
 const id = route.params.id
@@ -17,6 +21,11 @@ const busy = ref(false)
 const live = ref(false)
 let es = null
 const rating = ref({ score: 5, note: '' })
+const evidenceDrawer = ref(null)
+const hypotheses = computed(() => tk.value?.report?.hypotheses || [])
+function openEvidence(obsId) {
+  evidenceDrawer.value?.open(obsId)
+}
 const trendEl = ref(null)
 let trendChart = null
 
@@ -173,9 +182,7 @@ onUnmounted(() => es && es.close())
         <div v-if="tk.report" class="report-card">
           <div class="report-head">
             <div class="report-title">📋 事故报告</div>
-            <span class="conf-pill" :class="{ low: (tk.report.confidence || 0) < 0.6 }">
-              置信度 {{ ((tk.report.confidence || 0) * 100).toFixed(0) }}%
-            </span>
+            <ConfidenceGauge :confidence="tk.report.confidence || 0" :size="56" />
           </div>
           <div class="report-section">
             <h4>根因</h4>
@@ -185,13 +192,13 @@ onUnmounted(() => es && es.close())
             <h4>摘要</h4>
             <div style="font-size: 13px; color: var(--text-secondary)">{{ tk.report.summary }}</div>
           </div>
+          <div class="report-section" v-if="hypotheses.length">
+            <h4>假设验证流</h4>
+            <HypothesisFlow :hypotheses="hypotheses" @open-evidence="openEvidence" />
+          </div>
           <div class="report-section" v-if="tk.report.timeline?.length">
             <h4>时间线</h4>
-            <ul>
-              <li v-for="t in tk.report.timeline" :key="t.event">
-                {{ t.event }} <span v-if="t.source" class="obs-ref">{{ t.source }}</span>
-              </li>
-            </ul>
+            <EvidenceTimeline :items="tk.report.timeline" @open-evidence="openEvidence" />
           </div>
           <div class="report-section" v-if="tk.report.recommendations?.length">
             <h4>处置建议</h4>
@@ -290,6 +297,8 @@ onUnmounted(() => es && es.close())
       </el-table>
     </div>
   </div>
+
+  <EvidenceDrawer ref="evidenceDrawer" :ticket-id="id" />
 
   <el-dialog v-model="confirmDlg" title="人工确认处置动作" width="460">
     <p style="font-size: 13px; margin-bottom: 10px">

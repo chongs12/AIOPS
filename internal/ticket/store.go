@@ -27,6 +27,7 @@ type Store interface {
 	ListMessages(ctx context.Context, ticketID string) ([]*Message, error)
 	SaveObservation(ctx context.Context, ticketID string, o *evidence.Observation) error
 	ListObservations(ctx context.Context, ticketID string) ([]*evidence.Observation, error)
+	GetObservation(ctx context.Context, ticketID, obsID string) (*evidence.Observation, error)
 }
 
 // NewID 生成工单号：t-YYYYMMDD-HHMMSS-xxxx。
@@ -294,6 +295,20 @@ func nullableJSON(v any) (any, error) {
 	return b, nil
 }
 
+// GetObservation 按 ID 取单条观察。
+func (s *PGStore) GetObservation(ctx context.Context, ticketID, obsID string) (*evidence.Observation, error) {
+	rows, err := s.ListObservations(ctx, ticketID)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range rows {
+		if o.ID == obsID {
+			return o, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 func nullableTime(t time.Time) any {
 	if t.IsZero() {
 		return nil
@@ -395,6 +410,19 @@ func (m *MemStore) SaveObservation(_ context.Context, ticketID string, o *eviden
 	m.observations[ticketID] = append(m.observations[ticketID], &cp)
 	m.mu.Unlock()
 	return nil
+}
+
+// GetObservation 按 ID 取单条观察。
+func (m *MemStore) GetObservation(_ context.Context, ticketID, obsID string) (*evidence.Observation, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, o := range m.observations[ticketID] {
+		if o.ID == obsID {
+			cp := *o
+			return &cp, nil
+		}
+	}
+	return nil, ErrNotFound
 }
 
 func (m *MemStore) ListObservations(_ context.Context, ticketID string) ([]*evidence.Observation, error) {
