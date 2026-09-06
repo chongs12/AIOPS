@@ -31,7 +31,7 @@ onUnmounted(() => clearInterval(timer))
 <template>
   <div class="card">
     <div class="card-title" style="justify-content: space-between">
-      <span>🧱 K8s 事件墙
+      <span>K8s 事件墙
         <span class="muted" style="margin-left: 8px">Warning 红色高亮 · 每 30s 自动刷新 · 最近刷新 {{ lastAt }}</span>
       </span>
       <div style="display: flex; gap: 8px">

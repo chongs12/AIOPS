@@ -46,7 +46,7 @@ onMounted(load)
 
 <template>
   <div class="card">
-    <div class="card-title">📚 知识库（已解决工单案例沉淀）
+    <div class="card-title">知识库（已解决工单案例沉淀）
       <span class="muted" style="margin-left: 8px">Milvus 向量检索 / PG 兜底</span>
     </div>
     <div style="display: flex; gap: 10px; margin-bottom: 14px">

@@ -44,28 +44,23 @@ onMounted(load)
 <template>
   <div class="stat-grid">
     <div class="stat-card">
-      <div class="stat-icon" style="background: linear-gradient(135deg, #6366f1, #4f46e5)">📋</div>
       <div><div class="stat-value">{{ stats.total }}</div><div class="stat-label">工单总数</div></div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: linear-gradient(135deg, #10b981, #059669)">✅</div>
       <div><div class="stat-value">{{ stats.resolved }}</div><div class="stat-label">已解决</div></div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626)">🚨</div>
       <div><div class="stat-value">{{ stats.escalated }}</div><div class="stat-label">转人工</div></div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706)">⚙️</div>
       <div><div class="stat-value">{{ stats.other }}</div><div class="stat-label">处理中/其它</div></div>
     </div>
   </div>
 
   <div class="card">
     <div class="card-title" style="justify-content: space-between">
-      <span>📋 运维工单</span>
-      <el-button type="primary" @click="dlg = true">
-        <el-icon style="margin-right: 4px"><Plus /></el-icon>提交工单
+      <span>运维工单</span>
+      <el-button type="primary" @click="dlg = true">提交工单
       </el-button>
     </div>
 
@@ -85,7 +80,7 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="来源" width="90">
         <template #default="{ row }">
-          <el-tag v-if="row.reporter === 'alertmanager'" size="small" type="danger" effect="dark">🔔 告警</el-tag>
+          <el-tag v-if="row.reporter === 'alertmanager'" size="small" type="danger" effect="dark">告警</el-tag>
           <span v-else class="muted">人工</span>
         </template>
       </el-table-column>

@@ -13,10 +13,10 @@ const pageTitle = computed(() => route.meta?.title || '')
   <div v-else class="app-layout">
     <aside class="sidebar">
       <div class="sidebar-logo">
-        <div class="logo-icon">AI</div>
+        <div class="logo-mark">AI</div>
         <div class="logo-copy">
           <span class="logo-text">AIOps</span>
-          <span class="logo-subtext">运维智能体平台</span>
+          <span class="logo-sub">Ops Platform</span>
         </div>
       </div>
 
@@ -59,7 +59,7 @@ const pageTitle = computed(() => route.meta?.title || '')
         </el-menu-item-group>
       </el-menu>
 
-      <div class="sidebar-footer">多 Agent 证据化推理<br>工具降级 · 人工确认</div>
+      <div class="sidebar-footer">Multi-agent RCA<br>evidence-based · human-in-loop</div>
     </aside>
 
     <div class="main-area">
@@ -70,9 +70,9 @@ const pageTitle = computed(() => route.meta?.title || '')
         </div>
         <div class="topbar-right">
           <router-link to="/noc" style="text-decoration: none">
-            <el-button size="small" plain>🖥️ NOC 大屏</el-button>
+            <el-button size="small" plain>NOC 大屏</el-button>
           </router-link>
-          <span class="model-badge">🤖 deepseek-v4-flash</span>
+          <span class="env-pill"><span class="dot"></span>deepseek-v4-flash</span>
         </div>
       </header>
       <main class="content">

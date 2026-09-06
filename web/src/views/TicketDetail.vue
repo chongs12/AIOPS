@@ -151,7 +151,7 @@ onUnmounted(() => es && es.close())
     <div class="card" style="display: flex; align-items: center; gap: 12px; padding: 14px 20px">
       <div>
         <div style="font-weight: 700; font-size: 15px">
-          <el-tag v-if="tk.reporter === 'alertmanager'" size="small" type="danger" effect="dark" style="margin-right: 6px">🔔 告警</el-tag>{{ tk.title }}
+          <el-tag v-if="tk.reporter === 'alertmanager'" size="small" type="danger" effect="dark" style="margin-right: 6px">告警</el-tag>{{ tk.title }}
         </div>
         <div class="muted">
           <span class="mono">{{ tk.id }}</span> · {{ typeLabel(tk.type) }}
@@ -163,10 +163,10 @@ onUnmounted(() => es && es.close())
         <el-tag v-if="live" type="warning" effect="dark" size="small">● 实时处理中</el-tag>
         <el-tag :type="statusType(tk.status)">{{ statusLabel(tk.status) }}</el-tag>
         <router-link :to="`/tickets/${id}/replay`">
-          <el-button size="small" type="primary" plain>🎬 回放</el-button>
+          <el-button size="small" type="primary" plain>回放</el-button>
         </router-link>
         <a v-if="tk.trace_url" class="link" :href="tk.trace_url" target="_blank">
-          <el-button size="small" plain>🔍 推理 Trace</el-button>
+          <el-button size="small" plain>Trace</el-button>
         </a>
       </div>
     </div>
@@ -186,7 +186,7 @@ onUnmounted(() => es && es.close())
         <!-- 事故报告卡 -->
         <div v-if="tk.report" class="report-card">
           <div class="report-head">
-            <div class="report-title">📋 事故报告</div>
+            <div class="report-title">事故报告</div>
             <ConfidenceGauge :confidence="tk.report.confidence || 0" :size="56" />
           </div>
           <div class="report-section">
@@ -216,7 +216,7 @@ onUnmounted(() => es && es.close())
               <el-button size="small" type="primary" plain
                          v-if="['scale', 'rollout_undo', 'k8s.scale', 'k8s.rollout_undo'].includes(rec.action)"
                          @click="askAction(rec)">
-                ⚡ 一键执行
+                执行
               </el-button>
             </div>
           </div>
@@ -252,7 +252,7 @@ onUnmounted(() => es && es.close())
 
     <!-- 满意度评价（resolved 后） -->
     <div class="card" v-if="tk.status === 'resolved'" style="margin-top: 18px">
-      <div class="card-title">⭐ 满意度评价
+      <div class="card-title">满意度
         <span v-if="tk.rating" class="muted" style="margin-left: 8px">
           已评价：{{ tk.rating }} 分{{ tk.rating_note ? ' · ' + tk.rating_note : '' }}
         </span>
@@ -266,7 +266,7 @@ onUnmounted(() => es && es.close())
 
     <!-- 故障窗错误率趋势 -->
     <div class="card" style="margin-top: 18px">
-      <div class="card-title">📉 5xx 错误率趋势（红色区域 = 工单故障时间窗）
+      <div class="card-title">5xx 错误率 · 工单故障时间窗
         <span class="muted" style="margin-left: 8px">真实 Prometheus range 查询</span>
       </div>
       <div ref="trendEl" style="height: 220px"></div>
@@ -274,7 +274,7 @@ onUnmounted(() => es && es.close())
 
     <!-- 观察集 + 审计 -->
     <div class="card">
-      <div class="card-title">🔬 观察集（真实工具查询）</div>
+      <div class="card-title">观察集</div>
       <el-collapse>
         <el-collapse-item v-for="o in observations" :key="o.id" :name="o.id">
           <template #title>
@@ -290,7 +290,7 @@ onUnmounted(() => es && es.close())
     </div>
 
     <div class="card" v-if="audit.length">
-      <div class="card-title">🛡️ 处置审计</div>
+      <div class="card-title">处置审计</div>
       <el-table :data="audit" size="small">
         <el-table-column prop="tool" label="工具" width="160" />
         <el-table-column prop="status" label="结果" width="90" />

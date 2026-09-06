@@ -72,8 +72,8 @@ onMounted(load)
       <el-table-column prop="revision" label="Revision" width="90" />
       <el-table-column label="操作" width="200">
         <template #default="{ row }">
-          <el-button size="small" type="primary" plain @click="askScale(row)">⚡ 扩缩容</el-button>
-          <el-button size="small" type="warning" plain @click="askUndo(row)">↩️ 回滚</el-button>
+          <el-button size="small" type="primary" plain @click="askScale(row)"> 扩缩容</el-button>
+          <el-button size="small" type="warning" plain @click="askUndo(row)"> 回滚</el-button>
         </template>
       </el-table-column>
     </el-table>

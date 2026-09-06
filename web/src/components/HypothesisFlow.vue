@@ -6,9 +6,9 @@ defineProps({
 const emit = defineEmits(['open-evidence'])
 
 const meta = {
-  confirmed: { icon: '✓', label: '已证实', color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-  rejected: { icon: '✗', label: '已排除', color: '#ef4444', bg: 'rgba(239,68,68,0.06)' },
-  pending: { icon: '⏳', label: '待验证', color: '#f59e0b', bg: 'rgba(245,158,11,0.07)' },
+  confirmed: { icon: 'CONFIRMED', label: '已证实', color: '#16875b', bg: 'rgba(22,135,91,0.07)' },
+  rejected: { icon: 'REJECTED', label: '已排除', color: '#d64550', bg: 'rgba(214,69,80,0.06)' },
+  pending: { icon: 'PENDING', label: '待验证', color: '#b45309', bg: 'rgba(180,83,9,0.06)' },
 }
 </script>
 
@@ -47,7 +47,7 @@ const meta = {
   display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px;
   border: 1px solid rgba(148, 163, 184, 0.14);
 }
-.hf-icon { font-size: 15px; font-weight: 700; width: 20px; flex-shrink: 0; padding-top: 1px; }
+.hf-icon { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; width: 68px; flex-shrink: 0; padding-top: 3px; font-family: var(--mono); }
 .hf-main { flex: 1; min-width: 0; }
 .hf-head { display: flex; align-items: center; justify-content: space-between; }
 .hf-label { font-size: 11px; font-weight: 700; }

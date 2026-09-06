@@ -67,7 +67,7 @@ const currentObs = computed(() => {
 })
 
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString('zh-CN')
-const typeIcon = (t) => ({ message: '💬', observation: '🔬', audit: '🛡️', status: '⚙️' }[t] || '•')
+const typeLabel = (t) => ({ message: 'MSG', observation: 'TOOL', audit: 'AUDIT', status: 'STATE' }[t] || '·')
 
 const stageEl = ref(null)
 function scrollStage() {
@@ -92,7 +92,7 @@ onUnmounted(() => clearTimeout(timer))
     <!-- 顶部：标题 + 播放控制 -->
     <div class="rp-head card">
       <div>
-        <div style="font-weight: 700">🎬 推理回放 · {{ tk?.title }}</div>
+        <div style="font-weight: 700">推理回放 · {{ tk?.title }}</div>
         <div class="muted mono">{{ id }}</div>
       </div>
       <div class="rp-controls">
@@ -106,7 +106,7 @@ onUnmounted(() => clearTimeout(timer))
         <el-slider v-model="progress" style="width: 220px" :format-tooltip="v => v + '%'" @input="seek" />
         <span class="muted mono">{{ cursor + 1 }}/{{ events.length }}</span>
         <a v-if="tk?.trace_url" :href="tk.trace_url" target="_blank">
-          <el-button size="small" plain>🔍 Trace</el-button>
+          <el-button size="small" plain>Trace</el-button>
         </a>
       </div>
     </div>
@@ -115,7 +115,7 @@ onUnmounted(() => clearTimeout(timer))
       <!-- 左：步骤时间轴 -->
       <div class="rp-timeline card">
         <div v-for="(e, i) in events" :key="i" class="rp-step" :class="{ done: i <= cursor, current: i === cursor }">
-          <span class="rp-step-icon">{{ typeIcon(e.type) }}</span>
+          <span class="rp-step-icon">{{ typeLabel(e.type) }}</span>
           <div>
             <div class="rp-step-title">{{ e.title }}</div>
             <div class="muted" style="font-size: 11px">{{ fmtTime(e.ts) }}</div>
@@ -128,7 +128,7 @@ onUnmounted(() => clearTimeout(timer))
         <div ref="stageEl" class="rp-stage-scroll">
           <div v-for="(e, i) in visibleEvents" :key="i" class="rp-event" :class="e.type">
             <div class="rp-event-head">
-              <span class="rp-event-badge">{{ typeIcon(e.type) }} {{ e.type }}</span>
+              <span class="rp-event-badge">{{ typeLabel(e.type) }} {{ e.type }}</span>
               <span class="muted mono" style="font-size: 11px">{{ fmtTime(e.ts) }}</span>
             </div>
             <div v-if="e.type === 'message'" class="rp-event-body" :class="{ user: e.actor === 'user' }">
@@ -144,7 +144,7 @@ onUnmounted(() => clearTimeout(timer))
           <!-- 结束态：报告摘要 -->
           <div v-if="cursor >= events.length - 1 && tk?.report" class="report-card">
             <div class="report-head">
-              <div class="report-title">📋 最终报告</div>
+              <div class="report-title">最终报告</div>
               <ConfidenceGauge :confidence="tk.report.confidence || 0" :size="52" />
             </div>
             <div class="report-section"><h4>根因</h4>

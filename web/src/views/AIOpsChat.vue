@@ -28,9 +28,9 @@ const quickChips = [
 ]
 
 const suggestQuestions = [
-  { icon: '🔥', text: 'gateway 接口 5xx 突增，请排查根因' },
-  { icon: '🧊', text: 'pod makejob-oom-demo 内存溢出 OOMKilled' },
-  { icon: '🐢', text: '数据库出现慢查询，影响下单接口' },
+  { icon: '', text: 'gateway 接口 5xx 突增，请排查根因' },
+  { icon: '', text: 'pod makejob-oom-demo 内存溢出 OOMKilled' },
+  { icon: '', text: '数据库出现慢查询，影响下单接口' },
 ]
 
 async function loadSessions() {
@@ -147,7 +147,7 @@ watch(cur, scrollBottom)
             <div class="empty-copy">
               描述一个故障现象，多 Agent 会查询真实集群的 Prometheus / 日志 / 事件，
               给出带证据引用与置信度的根因报告。每段对话都会沉淀为可检索的处置案例。
-              <div class="muted" style="margin-top: 8px; font-size: 11px">🔔 接入 Alertmanager 后，告警会自动创建工单并进入本对话流。</div>
+              <div class="muted" style="margin-top: 8px; font-size: 11px">接入 Alertmanager 后，告警会自动创建工单并进入本对话流。</div>
             </div>
             <div class="aiops-quick-questions" style="margin-top: 14px; justify-content: center">
               <button v-for="q in suggestQuestions" :key="q.text" type="button" class="quick-chip"
@@ -205,7 +205,7 @@ watch(cur, scrollBottom)
               <div style="width: 100%">
                 <div class="report-card">
                   <div class="report-head">
-                    <div class="report-title">📋 事故报告</div>
+                    <div class="report-title">事故报告</div>
                     <ConfidenceGauge :confidence="tk.report.confidence || 0" :size="52" />
                   </div>
                   <div class="report-section"><h4>根因</h4>

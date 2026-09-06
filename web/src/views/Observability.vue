@@ -86,28 +86,28 @@ onUnmounted(() => {
     </template>
     <div class="stat-grid">
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #6366f1, #4f46e5)">🖥️</div>
+        <div class="stat-icon" style="background: linear-gradient(135deg, #6366f1, #4f46e5)"></div>
         <div>
           <div class="stat-value">{{ (overview?.services || []).length }}</div>
           <div class="stat-label">服务实例（Prometheus 目标）</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626)">🔥</div>
+        <div class="stat-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626)"></div>
         <div>
           <div class="stat-value">{{ fmt(overview?.err_5xx_rate, ' rps') }}</div>
           <div class="stat-label">5xx 速率（5m 窗口）</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #10b981, #059669)">🌐</div>
+        <div class="stat-icon" style="background: linear-gradient(135deg, #10b981, #059669)"></div>
         <div>
           <div class="stat-value">{{ fmt(overview?.total_rate, ' rps') }}</div>
           <div class="stat-label">总请求速率</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706)">⚡</div>
+        <div class="stat-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706)"></div>
         <div>
           <div class="stat-value">{{ fmt(overview?.p99_seconds, ' s') }}</div>
           <div class="stat-label">网关 P99 延迟</div>
@@ -116,7 +116,7 @@ onUnmounted(() => {
     </div>
 
     <div class="card">
-      <div class="card-title">📈 5xx 错误率趋势
+      <div class="card-title">5xx 错误率
         <el-select v-model="tsRange" size="small" style="width: 110px; margin-left: auto" @change="loadTrends">
           <el-option :value="15" label="近 15 分钟" />
           <el-option :value="60" label="近 1 小时" />
@@ -127,12 +127,12 @@ onUnmounted(() => {
     </div>
 
     <div class="card">
-      <div class="card-title">📉 网关 P99 延迟趋势</div>
+      <div class="card-title">P99 延迟</div>
       <div ref="p99Chart" style="height: 240px"></div>
     </div>
 
     <div class="card">
-      <div class="card-title">🟢 服务存活状态（真实 up 指标聚合）
+      <div class="card-title">服务存活状态
         <span class="muted" style="margin-left: 8px">数据源: prometheus.localhost</span>
       </div>
       <div style="display: flex; flex-wrap: wrap; gap: 8px">

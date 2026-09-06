@@ -111,7 +111,7 @@ onMounted(() => { load(); loadChain() })
 
 <template>
   <div class="card">
-    <div class="card-title">🧠 Prompt 管理<span class="muted">DB 外置 + 两级缓存（L1 5s / L2 60s）+ 版本失效，保存后 ≤5s 生效</span></div>
+    <div class="card-title">Prompt 管理<span class="muted">DB 外置 + 两级缓存（L1 5s / L2 60s）+ 版本失效，保存后 ≤5s 生效</span></div>
     <el-collapse>
       <el-collapse-item v-for="s in scenes" :key="s.scene" :name="s.scene">
         <template #title>
@@ -149,7 +149,7 @@ onMounted(() => { load(); loadChain() })
   </div>
 
   <div class="card">
-    <div class="card-title">🔌 Provider 链（热插拔）
+    <div class="card-title">Provider 链（热插拔）
       <span class="muted" style="margin-left: 8px">首个为主，失败自动切换 fallback；保存后 ≤10s 热替换生效，无需重启</span>
       <el-button size="small" style="margin-left: auto" @click="addProvider">＋ 添加</el-button>
       <el-button size="small" type="primary" :loading="chainLoading" @click="saveChain">保存并热替换</el-button>
@@ -169,7 +169,7 @@ onMounted(() => { load(); loadChain() })
   </div>
 
   <div class="card">
-    <div class="card-title">🔎 案例库检索
+    <div class="card-title">案例库检索
       <el-tag size="small" effect="plain">后端: {{ backend || '…' }}</el-tag>
       <span class="muted">已解决工单向量化沉淀（Milvus / PG 兜底）</span>
     </div>

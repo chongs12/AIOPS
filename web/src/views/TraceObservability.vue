@@ -67,7 +67,7 @@ onMounted(loadServices)
       <el-table-column label="操作" width="180">
         <template #default="{ row }">
           <a :href="`http://jaeger.localhost:8080/trace/${row.traceID}`" target="_blank">
-            <el-button size="small" plain>🔍 在 Jaeger 打开</el-button>
+            <el-button size="small" plain>在 Jaeger 打开</el-button>
           </a>
         </template>
       </el-table-column>
