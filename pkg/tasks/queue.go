@@ -149,8 +149,8 @@ WHERE id = (
 	slog.Warn("async 任务失败，将重试", "id", id, "kind", kind, "attempt", attempt, "delay", delay)
 }
 
-// ListDead 死信列表（管理面排查用）。
-func (q *Queue) ListDead(ctx context.Context, limit int) ([]Task, error) {
+// ListDead 死信列表（管理面排查用；返回预序列化 JSON 数组）。
+func (q *Queue) ListDead(ctx context.Context, limit int) (json.RawMessage, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
@@ -169,7 +169,17 @@ FROM async_tasks WHERE status='dead' ORDER BY id DESC LIMIT $1`, limit)
 		}
 		out = append(out, t)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []Task{}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // RedisClient 占位：保持与其它 pkg 相同的依赖形态（限流/缓存可挂接）。

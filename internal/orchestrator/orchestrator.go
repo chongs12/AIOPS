@@ -77,22 +77,59 @@ func New(opts Options) *Orchestrator {
 	}
 }
 
-// Process 同步处理一个工单（API 层负责异步调用；M2 换 pkg/async 任务状态机）。
-// 契约：除 ctx 取消外，任何内部错误都不向上抛——工单转 failed 并落库原因。
+// Process 同步处理一个全新工单（submitted）。
 func (o *Orchestrator) Process(ctx context.Context, ticketID string) error {
-	return o.process(ctx, ticketID, false)
+	return o.process(ctx, ticketID, modeFull)
 }
 
-// Resume 从断点续跑：用户补充信息后跳过意图识别，直接进入检索与推理阶段。
+// Resume 从 HITL 断点续跑：用户补充信息后重新评估完整性（多轮追问）。
 func (o *Orchestrator) Resume(ctx context.Context, ticketID string) error {
-	return o.process(ctx, ticketID, true)
+	return o.process(ctx, ticketID, modeResume)
 }
 
-func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent bool) error {
+// Handle 异步任务入口：按工单当前状态分派，幂等且可安全重试。
+// 这是 pkg/tasks worker 的调用契约——崩溃后重试不会把工单卡死在中间态。
+func (o *Orchestrator) Handle(ctx context.Context, ticketID string, resume bool) error {
+	tk, err := o.store.GetTicket(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("加载工单: %w", err)
+	}
+	switch tk.Status {
+	case ticket.StatusSubmitted:
+		return o.process(ctx, ticketID, modeFull)
+	case ticket.StatusAwaitingInfo:
+		// 等待用户补充是稳态（非失败）；若 resume 任务先到也按续跑处理。
+		if !resume {
+			return nil
+		}
+		return o.process(ctx, ticketID, modeResume)
+	case ticket.StatusInvestigating:
+		// 处理中重入：resume 任务重试走续跑语义（意图重评估）；
+		// 原始 process 任务重试走崩溃恢复（黑板从已落库观察重建）。
+		if resume {
+			return o.process(ctx, ticketID, modeResume)
+		}
+		return o.process(ctx, ticketID, modeRecover)
+	default:
+		// 终态幂等：任务重复投递直接成功。
+		return nil
+	}
+}
+
+// processMode 处理模式。
+type processMode int
+
+const (
+	modeFull    processMode = iota // 全新处理（意图→检索→推理→报告）
+	modeResume                     // HITL 续跑（意图重评估，多轮追问）
+	modeRecover                    // 崩溃恢复（黑板重建，跳过意图直接推理）
+)
+
+func (o *Orchestrator) process(ctx context.Context, ticketID string, mode processMode) error {
 	ctx, span := o.tracer.Start(ctx, "orchestrator.process",
 		trace.WithAttributes(
 			attribute.String("ticket.id", ticketID),
-			attribute.Bool("resume", skipIntent),
+			attribute.String("ticket.mode", fmt.Sprintf("%d", mode)),
 		))
 	defer span.End()
 
@@ -113,14 +150,12 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent 
 	if err != nil {
 		return fmt.Errorf("加载工单: %w", err)
 	}
-	// 断点续跑：awaiting_info 状态由 API 层转为 investigating 后从意图之后继续；
-	// 全新工单必须为 submitted。
-	if skipIntent {
-		if tk.Status != ticket.StatusInvestigating {
-			return fmt.Errorf("工单 %s 状态为 %s，不可续跑", ticketID, tk.Status)
-		}
-	} else if tk.Status != ticket.StatusSubmitted {
+	// 状态门：resume/recover 允许 investigating（恢复语义），full 必须 submitted。
+	if mode == modeFull && tk.Status != ticket.StatusSubmitted {
 		return fmt.Errorf("工单 %s 状态为 %s，不可处理", ticketID, tk.Status)
+	}
+	if mode != modeFull && tk.Status != ticket.StatusInvestigating {
+		return fmt.Errorf("工单 %s 状态为 %s，不可续跑", ticketID, tk.Status)
 	}
 
 	// trace id 落库（一次工单处理 = 一条分布式 trace）。
@@ -135,8 +170,8 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent 
 	board := evidence.NewBoard()
 	saved := map[string]bool{} // 已落库的观察
 
-	// 1. 意图识别（fresh 与 resume 都执行：补充内容需重新评估完整性）。
-	{
+	// 1. 意图识别（fresh 与 resume 都执行：补充内容需重新评估完整性；recover 跳过——实体已持久化）。
+	if mode != modeRecover {
 		intentOut, err := o.runAgent(ctx, tk, board, agent.NameIntent)
 		if err != nil {
 			return o.failStep(ctx, tk, "意图识别失败: "+err.Error())
@@ -170,6 +205,18 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent 
 		}
 	}
 
+	// 1.4 崩溃恢复：从已落库观察重建黑板；已有观察则跳过重复检索。
+	if mode == modeRecover {
+		if obs, err := o.store.ListObservations(ctx, tk.ID); err == nil && len(obs) > 0 {
+			for i := range obs {
+				board.Observations = append(board.Observations, *obs[i])
+				saved[obs[i].ID] = true
+			}
+			o.appendMsg(ctx, tk.ID, "system", "",
+				fmt.Sprintf("崩溃恢复：从断点重建黑板（%d 条已落库观察），继续根因推理。", len(obs)))
+		}
+	}
+
 	// 1.5 相似历史案例召回（M5）：进黑板供根因参考。
 	if o.cases != nil {
 		if scores, err := o.cases.Search(ctx, tk.Title+" "+tk.Content, 3); err == nil &&
@@ -183,8 +230,10 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, skipIntent 
 		}
 	}
 
-	// 2. 指标检索。
-	if _, err := o.runAgent(ctx, tk, board, agent.NameMetrics); err != nil {
+	// 2. 指标检索（恢复模式下已有观察则跳过，避免重复查询污染黑板）。
+	if mode == modeRecover && len(board.Observations) > 0 {
+		// 已重建，直接进入根因推理。
+	} else if _, err := o.runAgent(ctx, tk, board, agent.NameMetrics); err != nil {
 		return o.failStep(ctx, tk, "指标检索失败: "+err.Error())
 	}
 	if err := o.persistObservations(ctx, tk.ID, board, saved); err != nil {
@@ -251,8 +300,12 @@ func summarizeCases(scores []cases.Scored) string {
 		if i >= 3 {
 			break
 		}
+		cause := s.RootCause
+		if cause == "" {
+			cause = s.Summary // Milvus 行 RootCause 未存时回退摘要
+		}
 		parts = append(parts, fmt.Sprintf("%s[类型=%s 相似度=%.2f] 根因: %s",
-			s.TicketID, s.Type, s.Score, firstRunes(s.RootCause, 80)))
+			s.TicketID, s.Type, s.Score, firstRunes(cause, 80)))
 	}
 	if len(parts) == 0 {
 		return "无相似历史案例"

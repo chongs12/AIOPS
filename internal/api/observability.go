@@ -21,10 +21,14 @@ type TemplateLister interface {
 	ListForAPI() []promtool.APIView
 }
 
+// ServiceResolver 服务标签解析（job/instance → 服务名；配置注入，避免平台命名硬编码）。
+type ServiceResolver func(metric map[string]string) string
+
 // ObsDeps 观测查询依赖：模板库 + 工具执行管道（控制台查询走同一管道）。
 type ObsDeps struct {
 	Templates TemplateLister
 	Tools     ToolExecutor
+	Resolve   ServiceResolver // 可 nil = 缺省规则（service 标签 → job 前缀剥离 → instance）
 }
 
 // WithObservability 注入观测查询能力。
@@ -142,7 +146,7 @@ func (s *Server) overview(c *gin.Context) {
 	failed := []string{}
 
 	if r := results["up_status"]; r != nil && r.Status == tool.StatusOK {
-		out["services"] = parseUpByService(r.Data)
+		out["services"] = parseUpByService(r.Data, s.obs.Resolve)
 	} else {
 		out["services"] = []map[string]any{}
 		failed = append(failed, "up_status")
@@ -162,7 +166,7 @@ func (s *Server) overview(c *gin.Context) {
 }
 
 // parseUpByService 解析 up 序列 → 按服务聚合 up 状态（同一服务多实例取最小值）。
-func parseUpByService(data json.RawMessage) []map[string]any {
+func parseUpByService(data json.RawMessage, resolve ServiceResolver) []map[string]any {
 	var rows []struct {
 		Metric map[string]string `json:"metric"`
 		Value  []any             `json:"value"`
@@ -173,12 +177,11 @@ func parseUpByService(data json.RawMessage) []map[string]any {
 	svc := map[string]float64{}
 	for _, r := range rows {
 		name := r.Metric["service"]
+		if name == "" && resolve != nil {
+			name = resolve(r.Metric)
+		}
 		if name == "" {
-			if r.Metric["job"] == "makejob-gateway-http" {
-				name = "gateway"
-			} else {
-				name = r.Metric["instance"]
-			}
+			name = r.Metric["instance"]
 		}
 		v := firstNumber(r.Value)
 		if cur, ok := svc[name]; !ok || v < cur {

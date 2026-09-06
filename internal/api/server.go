@@ -38,6 +38,7 @@ type Server struct {
 	caseSearch CaseSearch    // 案例检索（可 nil）
 	authSvc    AuthBackend   // 鉴权后端（可 nil = 关闭）
 	queue      TaskSubmitter // 异步任务队列（可 nil = goroutine 兜底）
+	dead       DeadLister    // 死信查询（可 nil）
 	jbase      string        // Jaeger 查询页基地址（trace 链接）
 }
 
@@ -54,6 +55,14 @@ type TaskSubmitter interface {
 
 // WithQueue 注入异步任务队列。
 func (s *Server) WithQueue(q TaskSubmitter) *Server { s.queue = q; return s }
+
+// DeadLister 死信查询（tasks.Queue 实现；返回预序列化 JSON）。
+type DeadLister interface {
+	ListDead(ctx context.Context, limit int) (json.RawMessage, error)
+}
+
+// WithDeadLister 注入死信查询（nil = 队列未装配）。
+func (s *Server) WithDeadLister(d DeadLister) *Server { s.dead = d; return s }
 
 // NewServer 构造。
 func NewServer(store ticket.Store, orch *orchestrator.Orchestrator, jaegerBaseURL string) *Server {
@@ -114,6 +123,7 @@ func (s *Server) Handler() http.Handler {
 			admin.GET("/prompts", s.listPrompts)
 		}
 		v1.GET("/cases/search", s.searchCases) // M5 相似案例检索
+		v1.GET("/tasks/dead", s.listDeadTasks) // C5 死信任务（管理面排查）
 
 		k8sGrp := v1.Group("/k8s")
 		{

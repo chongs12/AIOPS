@@ -25,6 +25,24 @@ k8s:
   kubeconfig: ""          # 空 = in-cluster → 默认 kubeconfig
   namespace: default      # PreHire 服务所在命名空间
   timeout_seconds: 5
+  pod_prefix_fmt: "makejob-%s"   # 服务名 → Pod 前缀
+  job_prefix: "makejob-"         # Prometheus job 前缀（总览聚合用）
+  services:                      # 平台服务清单（意图识别/前端下拉，单一事实来源）
+    - gateway
+    - user
+    - membership
+    - question
+    - interview
+    - realtime
+    - growth
+    - plan
+    - companion
+    - community
+    - learning-archive
+    - ai-gateway
+    - rag
+    - coderunner
+    - admin
 
 postgres:
   dsn: postgres://aiops:${PG_PASSWORD}@localhost:5433/aiops?sslmode=disable

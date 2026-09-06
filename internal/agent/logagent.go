@@ -12,20 +12,30 @@ import (
 // NameLog 日志解析 Agent 名。
 const NameLog = "log"
 
+// PodNamer 服务名→Pod 前缀的映射（配置注入，避免命名约定硬编码）。
+type PodNamer func(service string) string
+
 // LogAgent 日志解析 Agent：拉取故障时间窗内的容器日志、K8s 事件与 Pod 状态，
 // 提取异常模式（ERROR/panic/OOMKilled/BackOff 等）写入观察集。
 // M2 数据源为 client-go 直拉（docs/03 的方案②）；Loki 为后续可选增强。
-type LogAgent struct{}
+type LogAgent struct {
+	podPrefix PodNamer
+}
 
-// NewLogAgent 构造。
-func NewLogAgent() *LogAgent { return &LogAgent{} }
+// NewLogAgent 构造；namer 为 nil 时用原样服务名（缺省约定由配置层决定）。
+func NewLogAgent(namer PodNamer) *LogAgent {
+	if namer == nil {
+		namer = func(service string) string { return service }
+	}
+	return &LogAgent{podPrefix: namer}
+}
 
 // Name Agent 名。
 func (a *LogAgent) Name() string { return NameLog }
 
 // Run 执行日志/事件/状态三类查询。
 func (a *LogAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) {
-	prefix := podPrefixOf(rc.Ticket.Entities.Service)
+	prefix := a.podPrefix(rc.Ticket.Entities.Service)
 	since := int64(maxInt(rc.Ticket.Entities.WindowMinutes, 30))
 	res := &MetricsResult{}
 
@@ -62,13 +72,7 @@ func (a *LogAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) {
 	}, nil
 }
 
-// podPrefixOf 服务名 → pod 名前缀（PreHire 命名约定 makejob-<svc>）。
-func podPrefixOf(service string) string {
-	if service == "" {
-		return ""
-	}
-	return "makejob-" + service
-}
+// podPrefixOf 服务名 → pod 名前缀（经配置注入的映射）。
 
 const (
 	k8sToolPods   = "k8s.get_pods"

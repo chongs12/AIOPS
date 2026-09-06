@@ -39,6 +39,20 @@ func (s *Server) protectedMiddleware() []gin.HandlerFunc {
 	return []gin.HandlerFunc{s.authSvc.Middleware()}
 }
 
+// listDeadTasks 死信任务查询（C5 排查面）。
+func (s *Server) listDeadTasks(c *gin.Context) {
+	if s.dead == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "任务队列未装配"})
+		return
+	}
+	data, err := s.dead.ListDead(c.Request.Context(), 50)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
+}
+
 // Login 登录换 JWT。
 func (s *Server) Login(c *gin.Context) {
 	var req struct {

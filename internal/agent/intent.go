@@ -8,7 +8,7 @@ import (
 	"aiops/pkg/llm"
 )
 
-// KnownServices PreHire 平台服务清单（见 docs/03-data-source.md）。
+// KnownServices 平台服务清单（factory 可经 config 覆盖；硬编码为最后兜底）。
 var KnownServices = []string{
 	"gateway", "user", "membership", "question", "interview", "realtime",
 	"growth", "plan", "companion", "community", "learning-archive",

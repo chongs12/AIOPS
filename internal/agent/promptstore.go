@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"aiops/pkg/cache"
@@ -59,9 +60,10 @@ func (s *DBPromptStore) Get(ctx context.Context, scene string) (string, error) {
 	v, _, err := s.cache.GetOrLoad(ctx, key, 60*time.Second, func(ctx context.Context) ([]byte, error) {
 		var tpl string
 		row := s.db.QueryRowContext(ctx, `SELECT prompt FROM agent_configs WHERE scene=$1`, scene)
-		if err := row.Scan(&tpl); err == nil {
+		if err := row.Scan(&tpl); err == nil && strings.TrimSpace(tpl) != "" {
 			return []byte(tpl), nil
 		}
+		// 空模板（历史脏数据）→ 回退内置
 		// 未配置 → 内置（作为缓存值，哨兵语义即“内置”）
 		b, err := s.builtin.Get(ctx, scene)
 		if err != nil {
@@ -105,14 +107,19 @@ func (s *DBPromptStore) GetSceneConfig(ctx context.Context, scene string) (Scene
 }
 
 // SetSceneConfig 管理面保存场景参数（版本失效 ≤5s 生效）。
+// 新行以内置模板兜底，绝不落空 prompt（空模板会让 Agent 提示词失效）。
 func (s *DBPromptStore) SetSceneConfig(ctx context.Context, scene string, sp SceneParams) error {
 	raw, err := json.Marshal(sp)
 	if err != nil {
 		return err
 	}
+	builtin, berr := s.builtin.Get(ctx, scene)
+	if berr != nil || builtin == "" {
+		builtin = "（内置模板缺失占位）"
+	}
 	if _, err := s.db.ExecContext(ctx, `
-INSERT INTO agent_configs (scene, prompt, config, updated_at) VALUES ($1,'', $2, now())
-ON CONFLICT (scene) DO UPDATE SET config=EXCLUDED.config, updated_at=now()`, scene, raw); err != nil {
+INSERT INTO agent_configs (scene, prompt, config, updated_at) VALUES ($1,$3, $2, now())
+ON CONFLICT (scene) DO UPDATE SET config=EXCLUDED.config, updated_at=now()`, scene, raw, builtin); err != nil {
 		return err
 	}
 	_, err = s.ver.BumpVersion(ctx, "sceneconfig")

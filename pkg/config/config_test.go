@@ -28,8 +28,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Prometheus.BaseURL != "http://prometheus.localhost:8080" {
 		t.Errorf("Prometheus.BaseURL 默认值 = %q", cfg.Prometheus.BaseURL)
 	}
-	// 默认值中的占位符（PG_PASSWORD/LLM_API_KEY）在环境未设置时应被上报。
-	if len(missing) != 2 {
+	// 默认值中的占位符（PG_PASSWORD/LLM_API_KEY/JWT_SECRET）在环境未设置时应被上报。
+	if len(missing) != 3 {
 		t.Errorf("空配置应上报默认占位符缺失, got %v", missing)
 	}
 }
@@ -48,9 +48,9 @@ postgres:
 	if cfg.Postgres.DSN != want {
 		t.Errorf("DSN = %q, want %q", cfg.Postgres.DSN, want)
 	}
-	// LLM_API_KEY 仍缺省（默认 provider），PG_PASSWORD 已注入。
-	if len(missing) != 1 || missing[0] != "LLM_API_KEY" {
-		t.Errorf("missing = %v, want [LLM_API_KEY]", missing)
+	// LLM_API_KEY/JWT_SECRET 仍缺省，PG_PASSWORD 已注入。
+	if len(missing) != 2 {
+		t.Errorf("missing = %v, want [LLM_API_KEY JWT_SECRET]", missing)
 	}
 }
 

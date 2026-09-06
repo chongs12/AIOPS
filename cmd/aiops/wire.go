@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -136,21 +137,41 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 		a.caseBackend = caseStore.Backend()
 	}
 
-	// Prompt 热更新仓库（M4）：需 PG；失败降级内置。
+	// Prompt/场景参数热更新仓库（M4）：需 PG；失败降级内置。
+	// 同一实例同时实现 PromptAdmin（管理面）与 llm.TemplateStore / SceneConfigSource（运行时），
+	// 确保 Agent 处理链真正消费热更新后的模板与参数。
 	var promptAdmin api.PromptAdmin
+	var runtimePrompts llm.TemplateStore
+	var runtimeSceneCfg agent.SceneConfigSource
 	if db != nil {
 		if ps, err := agent.NewDBPromptStore(ctx, db, rdb); err == nil {
 			promptAdmin = ps
-			slog.Info("Prompt 热更新仓库就绪（≤5s 生效）")
+			runtimePrompts = ps
+			runtimeSceneCfg = ps
+			slog.Info("Prompt/场景参数热更新仓库就绪（≤5s 生效，已接入编排链）")
 		} else {
 			slog.Warn("Prompt 外置失败，使用内置模板", "err", err)
 		}
 	}
 
+	// 服务命名解析：pod 前缀格式 + job 前缀剥离（配置化，替代 PreHire 硬编码）。
+	prefixFmt := cfg.K8s.PodPrefixFmt
+	if prefixFmt == "" {
+		prefixFmt = "%s"
+	}
+	namer := func(service string) string { return fmt.Sprintf(prefixFmt, service) }
+	resolver := func(metric map[string]string) string {
+		if job := metric["job"]; strings.HasPrefix(job, cfg.K8s.JobPrefix) {
+			return strings.TrimPrefix(job, cfg.K8s.JobPrefix)
+		}
+		return ""
+	}
+
 	// Agent + 编排。
-	agents := agent.NewAll(agent.Deps{LLM: llmc})
+	agents := agent.NewAll(agent.Deps{LLM: llmc, PodNamer: namer, Services: cfg.K8s.Services})
 	orch := orchestrator.New(orchestrator.Options{
 		Store: a.store, Agents: agents, Tools: executor, LLM: llmc, CaseStore: caseStore,
+		Prompts: runtimePrompts, SceneCfgs: runtimeSceneCfg,
 	})
 
 	// 鉴权（默认关闭）。
@@ -166,9 +187,11 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 
 	// 异步任务队列（C5）：工单处理经任务状态机（重试梯度/死信/崩溃恢复）。
 	var taskQueue api.TaskSubmitter
+	var deadLister api.DeadLister
 	if db != nil {
 		if q, err := tasks.NewQueue(ctx, db); err == nil {
 			taskQueue = q
+			deadLister = q
 			go q.Run(context.WithoutCancel(ctx), func(rctx context.Context, payload json.RawMessage) error {
 				var p struct {
 					TicketID string `json:"ticket_id"`
@@ -177,10 +200,7 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 				if err := json.Unmarshal(payload, &p); err != nil {
 					return err
 				}
-				if p.Resume {
-					return orch.Resume(rctx, p.TicketID)
-				}
-				return orch.Process(rctx, p.TicketID)
+				return orch.Handle(rctx, p.TicketID, p.Resume)
 			})
 		} else {
 			slog.Warn("任务队列迁移失败，降级 goroutine", "err", err)
@@ -190,8 +210,9 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	srv := api.NewServer(a.store, orch, cfg.Jaeger.BaseURL)
 	srv.WithTools(executor, auditReader)
 	srv.WithQueue(taskQueue)
+	srv.WithDeadLister(deadLister)
 	srv.WithAuth(authSvc)
-	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor})
+	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver})
 	srv.WithAdmin(promptAdmin, caseStore)
 	a.handler = srv.Handler()
 	return a, nil

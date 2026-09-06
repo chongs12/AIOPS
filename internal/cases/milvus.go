@@ -35,6 +35,7 @@ func NewMilvus(ctx context.Context, addr string, falls *PGStore) (*MilvusStore, 
 			WithField(entity.NewField().WithName("type").WithDataType(entity.FieldTypeVarChar).WithMaxLength(32)).
 			WithField(entity.NewField().WithName("service").WithDataType(entity.FieldTypeVarChar).WithMaxLength(64)).
 			WithField(entity.NewField().WithName("text").WithDataType(entity.FieldTypeVarChar).WithMaxLength(4096)).
+			WithField(entity.NewField().WithName("root_cause").WithDataType(entity.FieldTypeVarChar).WithMaxLength(2048)).
 			WithField(entity.NewField().WithName("created_at").WithDataType(entity.FieldTypeInt64)).
 			WithField(entity.NewField().WithName("vector").WithDataType(entity.FieldTypeFloatVector).WithDim(64))
 		if err := cli.CreateCollection(ctx, sch, 1); err != nil {
@@ -67,6 +68,7 @@ func (s *MilvusStore) Save(ctx context.Context, c *Case) error {
 		entity.NewColumnVarChar("type", []string{c.Type}),
 		entity.NewColumnVarChar("service", []string{c.Service}),
 		entity.NewColumnVarChar("text", []string{text}),
+		entity.NewColumnVarChar("root_cause", []string{c.RootCause}),
 		entity.NewColumnInt64("created_at", []int64{c.CreatedAt.Unix()}),
 		entity.NewColumnFloatVector("vector", 64, [][]float32{Embed(text)}),
 	}
@@ -86,7 +88,7 @@ func (s *MilvusStore) Search(ctx context.Context, query string, topK int) ([]Sco
 		return nil, err
 	}
 	rs, err := s.cli.Search(sctx, collection, nil, "",
-		[]string{"ticket_id", "type", "service", "text", "created_at"},
+		[]string{"ticket_id", "type", "service", "text", "root_cause", "created_at"},
 		[]entity.Vector{entity.FloatVector(Embed(query))},
 		"vector", entity.COSINE, topK, sp)
 	if err != nil {
@@ -117,10 +119,11 @@ func (s *MilvusStore) Search(ctx context.Context, query string, topK int) ([]Sco
 	for i := 0; i < n && i < len(sr.Scores); i++ {
 		out = append(out, Scored{
 			Case: Case{
-				TicketID: getStr(i, "ticket_id"),
-				Type:     getStr(i, "type"),
-				Service:  getStr(i, "service"),
-				Summary:  getStr(i, "text"),
+				TicketID:  getStr(i, "ticket_id"),
+				Type:      getStr(i, "type"),
+				Service:   getStr(i, "service"),
+				Summary:   getStr(i, "text"),
+				RootCause: getStr(i, "root_cause"),
 			},
 			Score: float64(sr.Scores[i]),
 		})

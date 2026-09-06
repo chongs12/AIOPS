@@ -78,11 +78,14 @@ type Jaeger struct {
 	TimeoutSeconds int    `yaml:"timeout_seconds" env:"TIMEOUT_SECONDS"`
 }
 
-// K8s 集群访问；Kubeconfig 为空时依次尝试 in-cluster 配置与默认 kubeconfig。
+// K8s 集群访问；服务清单/前缀可配置，避免 PreHire 命名约定硬编码进业务代码。
 type K8s struct {
-	Kubeconfig     string `yaml:"kubeconfig" env:"KUBECONFIG"`
-	Namespace      string `yaml:"namespace" env:"NAMESPACE"`
-	TimeoutSeconds int    `yaml:"timeout_seconds" env:"TIMEOUT_SECONDS"`
+	Kubeconfig     string   `yaml:"kubeconfig" env:"KUBECONFIG"`
+	Namespace      string   `yaml:"namespace" env:"NAMESPACE"`
+	TimeoutSeconds int      `yaml:"timeout_seconds" env:"TIMEOUT_SECONDS"`
+	Services       []string `yaml:"services,omitempty"`       // 平台服务清单（意图识别/前端下拉）
+	PodPrefixFmt   string   `yaml:"pod_prefix_fmt,omitempty"` // 服务名→Pod 前缀格式，缺省 "%s"
+	JobPrefix      string   `yaml:"job_prefix,omitempty"`     // Prometheus job 前缀，如 "makejob-"
 }
 
 // Postgres 工单/状态/证据存储。
@@ -144,13 +147,19 @@ func Default() *Config {
 		},
 		Prometheus: Prometheus{BaseURL: "http://prometheus.localhost:8080", TimeoutSeconds: 10},
 		Jaeger:     Jaeger{BaseURL: "http://jaeger.localhost:8080", TimeoutSeconds: 8},
-		K8s:        K8s{Namespace: "default", TimeoutSeconds: 5},
+		K8s: K8s{
+			Namespace:      "default",
+			TimeoutSeconds: 5,
+			PodPrefixFmt:   "%s", // 缺省原样；PreHire 集群在 yaml 里配 "makejob-%s"
+			JobPrefix:      "makejob-",
+		},
 		Postgres: Postgres{
 			DSN:         "postgres://aiops:${PG_PASSWORD}@localhost:5433/aiops?sslmode=disable",
 			MaxOpenConn: 20,
 		},
 		Redis: Redis{
 			Addr:          "localhost:6380", // 专用实例，避免与宿主机既有 Redis 冲突
+			Password:      "aiops_dev",      // 与 dev compose requirepass 默认值一致；生产经环境覆盖
 			PoolSize:      10,
 			DialTimeoutMS: 200,
 			ReadTimeoutMS: 200,

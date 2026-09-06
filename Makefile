@@ -39,9 +39,14 @@ kind-load:
 	kind load docker-image aiops-server:dev --name makejob
 
 deploy: docker-build kind-load
+	@echo "==> 探测宿主机网关 IP（Pod 访问宿主机 PG/Redis 用）"
+	$(eval GATEWAY_IP := $(shell docker exec makejob-control-plane getent ahostsv4 host.docker.internal | head -1 | awk '{print $$1}'))
+	@echo "    网关: $(GATEWAY_IP)"
 	helm upgrade --install aiops deploy/helm/aiops -n default \
 	  --set image.tag=dev \
+	  --set hostGatewayIp=$(GATEWAY_IP) \
 	  --set secrets.pgPassword=$${PG_PASSWORD:-aiops_dev} \
+	  --set secrets.redisPassword=$${REDIS_PASSWORD:-aiops_dev} \
 	  --set secrets.llmApiKey="$${LLM_API_KEY}" \
 	  --set secrets.jwtSecret="$${JWT_SECRET:-dev-secret}"
 

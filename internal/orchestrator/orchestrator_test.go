@@ -447,3 +447,53 @@ func TestProcessHITLSuspendAndResume(t *testing.T) {
 		t.Fatal("应有报告")
 	}
 }
+
+// TestProcessCrashRecover 模拟 investigating 中途崩溃：Handle 重试应从已落库观察重建黑板并完成推理。
+func TestProcessCrashRecover(t *testing.T) {
+	llmc := newPromptAwareLLM(t, rcaOK)
+	tools := &scriptTools{items: []*tool.Result{{
+		Status:   tool.StatusOK,
+		Data:     json.RawMessage(okVector),
+		Evidence: tool.EvidenceMeta{Source: "prometheus", Query: "sum(rate(...))"},
+	}}}
+	store := ticket.NewMemStore()
+	o := New(Options{Store: store, Agents: agent.NewAll(agent.Deps{LLM: llmc}), Tools: tools, LLM: llmc})
+
+	// 第一阶段：跑到 investigating 并落库 5 条观察（然后"崩溃"——直接丢弃内存黑板）。
+	tk := ticket.New("接口 5xx 突增", "gateway 出现大量 5xx", "oncall")
+	_ = store.CreateTicket(context.Background(), tk)
+	var firstObs int
+	for i := 0; i < 5 && firstObs == 0; i++ {
+		if err := o.Process(context.Background(), tk.ID); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := store.GetTicket(context.Background(), tk.ID)
+		obs, _ := store.ListObservations(context.Background(), tk.ID)
+		firstObs = len(obs)
+		_ = got
+		break
+	}
+	obs, _ := store.ListObservations(context.Background(), tk.ID)
+	if len(obs) == 0 {
+		t.Fatalf("前置失败：无观察落库，无法模拟崩溃中间态")
+	}
+	// 强制把工单置回 investigating 模拟崩溃现场（Process 已终态则人为重置场景）。
+	got, _ := store.GetTicket(context.Background(), tk.ID)
+	if got.Status == ticket.StatusResolved {
+		got.Status = ticket.StatusInvestigating
+		_ = store.UpdateTicket(context.Background(), got)
+	}
+	// 崩溃重试：Handle(resume=false) → modeRecover → 黑板重建 → 推理 → resolved。
+	if err := o.Handle(context.Background(), tk.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	final, _ := store.GetTicket(context.Background(), tk.ID)
+	if final.Status != ticket.StatusResolved {
+		t.Fatalf("崩溃恢复后应 resolved: %s（%s）", final.Status, final.Error)
+	}
+	// 恢复不应重复产生观察（重建的 5 条不重复落库）。
+	obsAfter, _ := store.ListObservations(context.Background(), tk.ID)
+	if len(obsAfter) != len(obs) {
+		t.Errorf("恢复不应新增观察: before=%d after=%d", len(obs), len(obsAfter))
+	}
+}
