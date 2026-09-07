@@ -17,7 +17,8 @@ const observations = ref([])
 const messages = ref([])
 const composer = ref('')
 const live = ref(false)
-const processOpen = ref(true)
+const processOpen = ref(false)
+watch(live, (v) => { processOpen.value = v })
 const listEl = ref(null)
 let es = null
 
@@ -199,17 +200,27 @@ watch(cur, () => scrollBottom(true))
                     </button>
                   </div>
                 </div>
+                <transition name="expand">
                 <div v-show="processOpen" class="tool-event-list">
-                  <div v-for="o in observations" :key="o.id" class="tool-event-item">
+                  <div v-for="(o, i) in observations" :key="o.id" class="tool-event-item"
+                       :class="{ fresh: live && i === observations.length - 1 }"
+                       :style="{ animationDelay: (i * 0.06) + 's' }">
+                    <span class="tool-event-dot" :class="o.status === 'ok' ? 'ok' : 'bad'" />
                     <span class="tool-event-name">{{ o.source }}</span>
-                    <span class="tool-event-detail">{{ o.status === 'ok' ? '✓' : '✗' }} {{ o.summary.slice(0, 46) }}</span>
+                    <span class="tool-event-detail">{{ o.summary.slice(0, 52) }}</span>
+                  </div>
+                  <div v-if="live" class="tool-event-item thinking">
+                    <span class="tool-event-dot pulse" />
+                    <span class="tool-event-name">正在执行</span>
+                    <span class="tool-event-detail"><span class="typing-dots"><span /><span /><span /></span></span>
                   </div>
                 </div>
+                </transition>
               </div>
             </div>
 
-            <!-- 最终报告（富卡片内联） -->
-            <div v-if="reportOf(tk)" class="message-item assistant">
+            <!-- 最终报告（富卡片内联；仅在有实质根因内容时渲染，处理中不出现空卡） -->
+            <div v-if="tk?.status === 'resolved' && reportOf(tk)?.root_cause" class="message-item assistant">
               <div style="width: 100%">
                 <div class="report-card">
                   <div class="report-head">
@@ -347,4 +358,16 @@ watch(cur, () => scrollBottom(true))
 .composer-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; }
 .composer-tip { font-size: 10px; color: #64748b; }
 .aiops-send-btn { border-radius: 8px; }
+
+.tool-event-item { animation: toolIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; display: flex; align-items: center; gap: 7px; }
+@keyframes toolIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.tool-event-item.fresh .tool-event-dot { box-shadow: 0 0 0 4px rgba(59, 110, 246, 0.15); }
+.tool-event-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tool-event-dot.ok { background: var(--ok, #16875b); }
+.tool-event-dot.bad { background: var(--bad, #d64550); }
+.tool-event-dot.pulse { background: var(--accent, #3b6ef6); animation: pulse 1.2s infinite; }
+.tool-event-item.thinking { color: var(--fg-3, #8b93a3); }
+.expand-enter-active, .expand-leave-active { transition: all 0.25s ease; overflow: hidden; }
+.expand-enter-from, .expand-leave-to { opacity: 0; max-height: 0; }
+.expand-enter-to, .expand-leave-from { opacity: 1; max-height: 600px; }
 </style>

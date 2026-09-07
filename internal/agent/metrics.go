@@ -62,7 +62,7 @@ func (a *MetricsAgent) Run(ctx context.Context, rc *RunContext) (*Output, error)
 			// 工具层契约：一般失败已是 failed 信封；此处为调用方错误。
 			return nil, fmt.Errorf("metrics 工具调用失败: %w", err)
 		}
-		obs := ObservationFromToolResult(tpl, tr)
+		obs := ObservationFromToolResult("prometheus.query", tr)
 		id := rc.Board.AddObservation(obs)
 		res.ObservationIDs = append(res.ObservationIDs, id)
 		if obs.Status == tool.StatusFailed {
@@ -127,12 +127,12 @@ func slowSummary(tr *tool.Result) string {
 const timeRFC3339 = "2006-01-02T15:04:05Z07:00"
 
 // observationFromToolResult 工具结果 → 观察（含机械摘要，供 LLM 阅读）。
-func ObservationFromToolResult(template string, tr *tool.Result) evidence.Observation {
+func ObservationFromToolResult(source string, tr *tool.Result) evidence.Observation {
 	obs := evidence.Observation{
-		Source:  "prometheus.query",
+		Source:  source,
 		Query:   tr.Evidence.Query,
 		Status:  tr.Status,
-		Summary: summarize(template, tr),
+		Summary: summarize(source, tr),
 	}
 	if len(tr.Data) > 0 {
 		obs.Data = tr.Data

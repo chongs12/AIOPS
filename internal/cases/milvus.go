@@ -46,6 +46,10 @@ func NewMilvus(ctx context.Context, addr string, falls *PGStore) (*MilvusStore, 
 			return nil, fmt.Errorf("milvus 建索引: %w", err)
 		}
 	}
+	// schema 漂移自愈：旧集合缺 root_cause 列时重建（PG 兜底仍在，数据可再沉淀）。
+	if err := ensureSchema(ctx, cli); err != nil {
+		return nil, fmt.Errorf("milvus schema 校验: %w", err)
+	}
 	// 检索前必须 Load；已存在的集合同样确保加载。
 	if err := cli.LoadCollection(ctx, collection, false); err != nil {
 		return nil, fmt.Errorf("milvus 加载集合: %w", err)
@@ -146,4 +150,36 @@ func (s *MilvusStore) Search(ctx context.Context, query string, topK int) ([]Sco
 		}
 	}
 	return out, nil
+}
+
+// ensureSchema 校验集合含 root_cause 字段；缺失则删除重建（幂等，仅旧集合首次启动触发一次）。
+func ensureSchema(ctx context.Context, cli client.Client) error {
+	cols, err := cli.DescribeCollection(ctx, collection)
+	if err != nil {
+		return err // 不存在则上面已建
+	}
+	for _, f := range cols.Schema.Fields {
+		if f.Name == "root_cause" {
+			return nil // schema 已新
+		}
+	}
+	slog.Warn("Milvus 集合缺少 root_cause 字段（旧 schema），自动重建", "collection", collection)
+	if err := cli.DropCollection(ctx, collection); err != nil {
+		return err
+	}
+	// 重建走 NewMilvus 同一路径：直接调用方逻辑较绕，这里内联最小重建。
+	sch := entity.NewSchema().WithName(collection).WithDescription("AIOps resolved-ticket cases").
+		WithField(entity.NewField().WithName("id").WithDataType(entity.FieldTypeInt64).WithIsPrimaryKey(true).WithIsAutoID(true)).
+		WithField(entity.NewField().WithName("ticket_id").WithDataType(entity.FieldTypeVarChar).WithMaxLength(64)).
+		WithField(entity.NewField().WithName("type").WithDataType(entity.FieldTypeVarChar).WithMaxLength(32)).
+		WithField(entity.NewField().WithName("service").WithDataType(entity.FieldTypeVarChar).WithMaxLength(64)).
+		WithField(entity.NewField().WithName("text").WithDataType(entity.FieldTypeVarChar).WithMaxLength(4096)).
+		WithField(entity.NewField().WithName("root_cause").WithDataType(entity.FieldTypeVarChar).WithMaxLength(2048)).
+		WithField(entity.NewField().WithName("created_at").WithDataType(entity.FieldTypeInt64)).
+		WithField(entity.NewField().WithName("vector").WithDataType(entity.FieldTypeFloatVector).WithDim(64))
+	if err := cli.CreateCollection(ctx, sch, 1); err != nil {
+		return err
+	}
+	idx := entity.NewGenericIndex("vector", entity.AUTOINDEX, map[string]string{})
+	return cli.CreateIndex(ctx, collection, "vector", idx, false)
 }

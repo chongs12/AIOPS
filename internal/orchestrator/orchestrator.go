@@ -247,11 +247,18 @@ func (o *Orchestrator) process(ctx context.Context, ticketID string, mode proces
 		}
 	}
 
-	// 2. 指标检索（恢复模式下已有观察则跳过，避免重复查询污染黑板）。
+	// 2. 指标检索 + 日志/K8s 证据（恢复模式下已有观察则跳过，避免重复查询污染黑板）。
 	if mode == modeRecover && len(board.Observations) > 0 {
 		// 已重建，直接进入根因推理。
-	} else if _, err := o.runAgent(ctx, tk, board, agent.NameMetrics); err != nil {
-		return o.failStep(ctx, tk, "指标检索失败: "+err.Error())
+	} else {
+		if _, err := o.runAgent(ctx, tk, board, agent.NameMetrics); err != nil {
+			return o.failStep(ctx, tk, "指标检索失败: "+err.Error())
+		}
+		// 日志解析 Agent：副本数/K8s 事件/容器日志——定位"缩容/删Pod/OOM"类故障的关键证据。
+		// 失败不阻塞（证据链标注缺失即可），与工具层降级语义一致。
+		if _, err := o.runAgent(ctx, tk, board, agent.NameLog); err != nil {
+			o.appendMsg(ctx, tk.ID, "system", "", "日志检索降级: "+err.Error())
+		}
 	}
 	if err := o.persistObservations(ctx, tk.ID, board, saved); err != nil {
 		return err
