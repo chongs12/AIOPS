@@ -39,6 +39,16 @@ async function loadSessions() {
   sessions.value = d.items || []
 }
 
+// 新对话：脱离当前会话回到空态（发送即创建新工单会话）。
+function newSession() {
+  if (es) es.close()
+  cur.value = ''
+  tk.value = null
+  messages.value = []
+  observations.value = []
+  live.value = false
+}
+
 async function selectSession(id) {
   cur.value = id
   live.value = false
@@ -116,6 +126,7 @@ watch(cur, () => scrollBottom(true))
     <aside class="aiops-session-list">
       <div class="session-list-head">
         <span class="session-list-title">会话历史</span>
+        <button type="button" class="session-new-btn" @click="newSession" title="开始新对话">＋ 新对话</button>
       </div>
       <div v-for="s in sessions" :key="s.id" class="aiops-session-item" :class="{ active: cur === s.id }">
         <button type="button" class="session-select-btn" @click="selectSession(s.id)">
@@ -284,7 +295,13 @@ watch(cur, () => scrollBottom(true))
   border-radius: var(--card-radius); box-shadow: var(--card-shadow);
   padding: 10px; overflow-y: auto;
 }
-.session-list-head { padding: 6px 8px 10px; }
+.session-list-head { padding: 6px 8px 10px; display: flex; align-items: center; justify-content: space-between; }
+.session-new-btn {
+  font-size: 11px; font-weight: 600; color: var(--accent-strong);
+  background: var(--accent-soft); border: 1px solid var(--accent-border);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; transition: all 0.15s ease;
+}
+.session-new-btn:hover { background: rgba(59, 110, 246, 0.16); }
 .session-list-title { font-size: 13px; font-weight: 700; color: #334155; }
 .aiops-session-item { position: relative; border-radius: 12px; margin-bottom: 6px; transition: all .18s ease; }
 .aiops-session-item:hover { background: #fff; transform: translateY(-1px); }
