@@ -198,6 +198,26 @@ func (s *Server) listAudit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
+// deleteTicket 删除工单（处理中的工单不允许删——防止误删正在推理的会话）。
+func (s *Server) deleteTicket(c *gin.Context) {
+	id := c.Param("id")
+	ctx := c.Request.Context()
+	tk, err := s.store.GetTicket(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	if tk.Status == ticket.StatusInvestigating || tk.Status == ticket.StatusAwaitingInfo {
+		c.JSON(http.StatusConflict, gin.H{"error": "处理中的工单不允许删除（状态: " + tk.Status + "），请先等待处理完成"})
+		return
+	}
+	if err := s.store.DeleteTicket(ctx, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "工单已删除（含消息/观察记录）", "id": id})
+}
+
 // rateTicket 满意度评价（仅 resolved 工单可评）。
 func (s *Server) rateTicket(c *gin.Context) {
 	id := c.Param("id")

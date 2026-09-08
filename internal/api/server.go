@@ -130,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 		v1.GET("/tickets/:id", s.getTicket)
 		v1.GET("/tickets/:id/messages", s.listMessages)
 		v1.GET("/tickets/:id/observations", s.listObservations)
+		v1.DELETE("/tickets/:id", s.deleteTicket) // 删除工单（保护组：鉴权开启时需 token）
 		v1.GET("/tickets/:id/observations/:oid", s.getObservation)
 		v1.POST("/tickets/:id/reply", s.replyTicket)  // HITL：补充信息，断点续跑
 		v1.PATCH("/tickets/:id/rating", s.rateTicket) // 满意度评价

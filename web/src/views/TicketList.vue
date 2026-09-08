@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { createTicket, listTickets, statusType, statusLabel, typeLabel } from '../api'
+import { createTicket, listTickets, statusType, statusLabel, typeLabel, deleteTicket } from '../api'
+import { ElMessage } from 'element-plus'
 import SkeletonCard from '../components/SkeletonCard.vue'
 
 const router = useRouter()
@@ -36,6 +37,29 @@ async function submit() {
   form.value = { title: '', content: '', reporter: '' }
   await load()
   router.push(`/tickets/${d.id}`)
+}
+
+const delDlg = ref(false)
+const delTarget = ref(null)
+const deleting = ref(false)
+
+function askDelete(row) {
+  delTarget.value = row
+  delDlg.value = true
+}
+
+async function confirmDelete() {
+  deleting.value = true
+  try {
+    await deleteTicket(delTarget.value.id)
+    ElMessage.success('工单已删除')
+    delDlg.value = false
+    await load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '删除失败')
+  } finally {
+    deleting.value = false
+  }
 }
 
 onMounted(load)
@@ -94,6 +118,13 @@ onMounted(load)
       <el-table-column prop="created_at" label="创建时间" width="170">
         <template #default="{ row }"><span class="muted">{{ new Date(row.created_at).toLocaleString('zh-CN') }}</span></template>
       </el-table-column>
+      <el-table-column label="操作" width="80" fixed="right">
+        <template #default="{ row }">
+          <el-button size="small" type="danger" text :disabled="row.status === 'investigating' || row.status === 'awaiting_info'"
+                     :title="row.status === 'investigating' || row.status === 'awaiting_info' ? '处理中的工单不允许删除' : '删除工单'"
+                     @click.stop="askDelete(row)">删除</el-button>
+        </template>
+      </el-table-column>
     </el-table>
   </div>
 
@@ -113,6 +144,17 @@ onMounted(load)
     <template #footer>
       <el-button @click="dlg = false">取消</el-button>
       <el-button type="primary" @click="submit">提交并跟踪处理</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="delDlg" title="删除工单" width="420">
+    <p style="font-size: 13px">
+      确定删除工单 <b class="mono">{{ delTarget?.id }}</b>（{{ delTarget?.title }}）？
+      其消息流水、观察记录将一并删除，此操作不可恢复。
+    </p>
+    <template #footer>
+      <el-button @click="delDlg = false">取消</el-button>
+      <el-button type="danger" :loading="deleting" @click="confirmDelete">确认删除</el-button>
     </template>
   </el-dialog>
 </template>

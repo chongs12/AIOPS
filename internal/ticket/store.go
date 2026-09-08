@@ -28,6 +28,7 @@ type Store interface {
 	SaveObservation(ctx context.Context, ticketID string, o *evidence.Observation) error
 	ListObservations(ctx context.Context, ticketID string) ([]*evidence.Observation, error)
 	GetObservation(ctx context.Context, ticketID, obsID string) (*evidence.Observation, error)
+	DeleteTicket(ctx context.Context, ticketID string) error
 }
 
 // NewID 生成工单号：t-YYYYMMDD-HHMMSS-xxxx。
@@ -296,6 +297,13 @@ func nullableJSON(v any) (any, error) {
 	return b, nil
 }
 
+// DeleteTicket 删除工单及关联数据（消息/观察级联）。
+func (s *PGStore) DeleteTicket(ctx context.Context, ticketID string) error {
+	// 级联删除依赖外键（ticket_messages/ticket_observations 已有 ON DELETE CASCADE）。
+	_, err := s.db.ExecContext(ctx, `DELETE FROM tickets WHERE id=$1`, ticketID)
+	return err
+}
+
 // GetObservation 按 ID 取单条观察。
 func (s *PGStore) GetObservation(ctx context.Context, ticketID, obsID string) (*evidence.Observation, error) {
 	rows, err := s.ListObservations(ctx, ticketID)
@@ -409,6 +417,16 @@ func (m *MemStore) SaveObservation(_ context.Context, ticketID string, o *eviden
 	cp := *o
 	m.mu.Lock()
 	m.observations[ticketID] = append(m.observations[ticketID], &cp)
+	m.mu.Unlock()
+	return nil
+}
+
+// DeleteTicket 删除工单及关联数据。
+func (m *MemStore) DeleteTicket(_ context.Context, ticketID string) error {
+	m.mu.Lock()
+	delete(m.tickets, ticketID)
+	delete(m.messages, ticketID)
+	delete(m.observations, ticketID)
 	m.mu.Unlock()
 	return nil
 }
