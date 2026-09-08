@@ -106,6 +106,9 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS pending JSONB;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rating INT;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rating_note TEXT DEFAULT '';
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'P2';
+ALTER TABLE ticket_messages ADD COLUMN IF NOT EXISTS prompt_tokens INT DEFAULT 0;
+ALTER TABLE ticket_messages ADD COLUMN IF NOT EXISTS completion_tokens INT DEFAULT 0;
+ALTER TABLE ticket_messages ADD COLUMN IF NOT EXISTS model TEXT DEFAULT '';
 `
 
 const ticketCols = `id, title, content, reporter, type, status, entities, trace_id, report, pending, rating, rating_note, error, created_at, updated_at`

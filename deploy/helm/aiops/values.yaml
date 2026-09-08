@@ -32,5 +32,6 @@ llm:
 
 secrets:
   pgPassword: aiops_dev
+  redisPassword: aiops_dev
   llmApiKey: ""
   jwtSecret: change-me-in-prod

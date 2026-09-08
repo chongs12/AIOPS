@@ -12,6 +12,7 @@ const errChart = ref(null)
 const p99Chart = ref(null)
 const clock = ref('')
 let timer = null
+let clockTimer = null
 let charts = []
 
 function initChart(el) {
@@ -63,10 +64,12 @@ function tickClock() {
 onMounted(() => {
   tickClock()
   load()
-  timer = setInterval(() => { tickClock(); load() }, 10000)
+  timer = setInterval(load, 10000)
+  clockTimer = setInterval(tickClock, 1000)
 })
 onUnmounted(() => {
   clearInterval(timer)
+  clearInterval(clockTimer)
   charts.forEach(c => c.inst.dispose())
 })
 </script>

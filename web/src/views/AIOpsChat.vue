@@ -59,10 +59,15 @@ async function selectSession(id) {
       if (!messages.value.some(x => x.seq === m.seq)) messages.value.push(m)
       scrollBottom()
     },
-    onStatus: async (s) => {
+    onStatus: (s) => {
+      // 轻量更新：只改状态字段，不整块 reload（保留逐条渲染效果）
       live.value = s === 'investigating'
-      await reload()
-      loadSessions()
+      if (tk.value) tk.value.status = s
+      if (s !== 'investigating') loadSessions()
+      if (s === 'resolved') {
+        // 终态时拉一次报告卡所需数据（不替换消息数组）
+        getTicket(cur.value).then(t => { tk.value = { ...t, messages: messages.value } })
+      }
     },
     onError: () => { live.value = false },
   })
@@ -71,7 +76,8 @@ async function selectSession(id) {
 async function reload() {
   if (!cur.value) return
   tk.value = await getTicket(cur.value)
-  messages.value = tk.value.messages || []
+  // 仅在初始加载（无已渲染消息）时整块替换，避免覆盖 SSE 逐条效果
+  if (!messages.value.length) messages.value = tk.value.messages || []
   observations.value = (await listObservations(cur.value)).items || []
   scrollBottom()
 }
