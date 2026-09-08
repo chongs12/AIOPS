@@ -128,6 +128,14 @@ func (t *Telemetry) Shutdown(ctx context.Context) {
 	}
 }
 
+// Gatherer 暴露 Prometheus registry（供 ai_usage 端点直接读当前指标值）。
+func (t *Telemetry) Gatherer() *prometheus.Registry {
+	if t == nil || t.registry == nil {
+		return prometheus.NewRegistry()
+	}
+	return t.registry
+}
+
 // MetricsHandler 返回 /metrics 的 http.Handler（未启用时返回空 registry 的 handler）。
 func (t *Telemetry) MetricsHandler() http.Handler {
 	reg := t.registry

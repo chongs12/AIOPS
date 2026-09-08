@@ -11,6 +11,8 @@ import (
 
 	"aiops/pkg/cache"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"aiops/internal/orchestrator"
 	"aiops/internal/ticket"
 	"aiops/internal/tool"
@@ -33,18 +35,19 @@ type AuditReader interface {
 type Server struct {
 	store      ticket.Store
 	orch       *orchestrator.Orchestrator
-	tools      ToolExecutor  // 处置动作执行
-	obs        *ObsDeps      // 观测查询（可 nil）
-	audit      AuditReader   // 审计查询（可 nil）
-	prompts    PromptAdmin   // prompt 热更新（可 nil）
-	caseSearch CaseSearch    // 案例检索（可 nil）
-	authSvc    AuthBackend   // 鉴权后端（可 nil = 关闭）
-	queue      TaskSubmitter // 异步任务队列（可 nil = goroutine 兜底）
-	dead       DeadLister    // 死信查询（可 nil）
-	verifier   Verifier      // 恢复复查调度（可 nil）
-	cache      *cache.Cache  // 告警去重等（可 nil）
-	providers  ProviderAdmin // provider 链热插拔（可 nil）
-	jbase      string        // Jaeger 查询页基地址（trace 链接）
+	tools      ToolExecutor        // 处置动作执行
+	obs        *ObsDeps            // 观测查询（可 nil）
+	audit      AuditReader         // 审计查询（可 nil）
+	prompts    PromptAdmin         // prompt 热更新（可 nil）
+	caseSearch CaseSearch          // 案例检索（可 nil）
+	authSvc    AuthBackend         // 鉴权后端（可 nil = 关闭）
+	queue      TaskSubmitter       // 异步任务队列（可 nil = goroutine 兜底）
+	dead       DeadLister          // 死信查询（可 nil）
+	verifier   Verifier            // 恢复复查调度（可 nil）
+	cache      *cache.Cache        // 告警去重等（可 nil）
+	metricsG   prometheus.Gatherer // 指标采集器（ai_usage 用，可 nil）
+	providers  ProviderAdmin       // provider 链热插拔（可 nil）
+	jbase      string              // Jaeger 查询页基地址（trace 链接）
 }
 
 // AuthBackend 鉴权能力（auth.Service 实现）。
@@ -76,6 +79,9 @@ type DeadLister interface {
 
 // WithCache 注入缓存（告警去重）。
 func (s *Server) WithCache(c *cache.Cache) *Server { s.cache = c; return s }
+
+// WithMetricsGatherer 注入指标采集器（ai_usage 端点用）。
+func (s *Server) WithMetricsGatherer(g prometheus.Gatherer) *Server { s.metricsG = g; return s }
 
 // WithDeadLister 注入死信查询（nil = 队列未装配）。
 func (s *Server) WithDeadLister(d DeadLister) *Server { s.dead = d; return s }
@@ -162,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 			obs.GET("/overview", s.overview)
 			obs.POST("/query", s.runQuery)
 		}
+		obs.GET("/ai_usage", s.aiUsage) // P4 token 消费聚合
 	}
 
 	// 受保护组：auth.enabled=true 时要求 Bearer；关闭时中间件为空（行为不变）。

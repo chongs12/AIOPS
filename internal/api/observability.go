@@ -11,6 +11,8 @@ import (
 	"aiops/internal/tool/promtool"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // ConsoleTicket 控制台查询的 ticketID 标记（审计区分工单与控制台流量）。
@@ -28,7 +30,8 @@ type ServiceResolver func(metric map[string]string) string
 type ObsDeps struct {
 	Templates TemplateLister
 	Tools     ToolExecutor
-	Resolve   ServiceResolver // 可 nil = 缺省规则（service 标签 → job 前缀剥离 → instance）
+	Resolve   ServiceResolver     // 可 nil = 缺省规则（service 标签 → job 前缀剥离 → instance）
+	Gatherer  prometheus.Gatherer // 指标采集器（ai_usage 端点读当前累计值）
 }
 
 // WithObservability 注入观测查询能力。
@@ -49,6 +52,103 @@ func (s *Server) getObservation(c *gin.Context) {
 		"summary": o.Summary, "status": o.Status,
 		"data": o.Data, "created_at": o.CreatedAt,
 	})
+}
+
+// aiUsageEntry AI 用量条目（按 provider/model/agent 归组）。
+type aiUsageEntry struct {
+	Provider         string  `json:"provider"`
+	Model            string  `json:"model"`
+	Agent            string  `json:"agent"`
+	Calls            float64 `json:"calls"`
+	PromptTokens     float64 `json:"prompt_tokens"`
+	CompletionTokens float64 `json:"completion_tokens"`
+}
+
+// aiUsageProvider AI 用量聚合视图。
+type aiUsageView struct {
+	TotalPromptTokens     float64        `json:"total_prompt_tokens"`
+	TotalCompletionTokens float64        `json:"total_completion_tokens"`
+	TotalCalls            float64        `json:"total_calls"`
+	AvgCallSeconds        float64        `json:"avg_call_seconds"`
+	ByEntry               []aiUsageEntry `json:"by_entry"`
+}
+
+// aiUsage AI token 消费聚合（P4/看板数据源；直接读本进程 OTel Prometheus registry）。
+// 本地 dev 与集群内部署统一走此端点，不依赖 Prometheus 抓取。
+func (s *Server) aiUsage(c *gin.Context) {
+	if s.obs == nil || s.obs.Gatherer == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "metrics 未装配"})
+		return
+	}
+	families, err := s.obs.Gatherer.Gather()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	view := aiUsageView{ByEntry: []aiUsageEntry{}}
+	type key struct{ provider, model, agent string }
+	entries := map[key]*aiUsageEntry{}
+	entry := func(k key) *aiUsageEntry {
+		if e, ok := entries[k]; ok {
+			return e
+		}
+		e := &aiUsageEntry{Provider: k.provider, Model: k.model, Agent: k.agent}
+		entries[k] = e
+		return e
+	}
+	var durSum, durCount float64
+
+	for _, mf := range families {
+		switch mf.GetName() {
+		case "ai_calls_total":
+			for _, m := range mf.GetMetric() {
+				k := key{provider: labelOf(m, "provider"), model: labelOf(m, "model"), agent: labelOf(m, "agent")}
+				e := entry(k)
+				e.Calls += m.GetCounter().GetValue()
+				view.TotalCalls += m.GetCounter().GetValue()
+			}
+		case "ai_tokens_total":
+			for _, m := range mf.GetMetric() {
+				k := key{provider: labelOf(m, "provider"), model: labelOf(m, "model"), agent: labelOf(m, "agent")}
+				e := entry(k)
+				v := m.GetCounter().GetValue()
+				switch labelOf(m, "type") {
+				case "prompt":
+					e.PromptTokens += v
+					view.TotalPromptTokens += v
+				case "completion":
+					e.CompletionTokens += v
+					view.TotalCompletionTokens += v
+				}
+			}
+		case "ai_call_duration_seconds":
+			for _, m := range mf.GetMetric() {
+				sum, cnt := m.GetHistogram().GetSampleSum(), m.GetHistogram().GetSampleCount()
+				durSum += sum
+				durCount += float64(cnt)
+			}
+		}
+	}
+	if durCount > 0 {
+		view.AvgCallSeconds = durSum / durCount
+	}
+	for _, e := range entries {
+		view.ByEntry = append(view.ByEntry, *e)
+	}
+	sort.Slice(view.ByEntry, func(i, j int) bool {
+		return view.ByEntry[i].Agent < view.ByEntry[j].Agent
+	})
+	c.JSON(http.StatusOK, view)
+}
+
+// labelOf 从 metric 取 label 值。
+func labelOf(m *dto.Metric, name string) string {
+	for _, l := range m.GetLabel() {
+		if l.GetName() == name {
+			return l.GetValue()
+		}
+	}
+	return ""
 }
 
 // listTemplates 模板清单。

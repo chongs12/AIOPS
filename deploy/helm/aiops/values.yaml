@@ -5,6 +5,9 @@ image:
 service:
   port: 8090
 
+metrics:
+  scrape: true   # Prometheus 注解抓取（ai_tokens_total 等指标）
+
 ingress:
   enabled: true
   host: aiops.localhost

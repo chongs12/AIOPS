@@ -433,7 +433,8 @@ func (o *Orchestrator) runAgentWith(ctx context.Context, rc *agent.RunContext, n
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
-	o.appendMsg(sctx, rc.Ticket.ID, "agent", name, out.Note)
+	o.appendMsgFull(sctx, rc.Ticket.ID, "agent", name, out.Note,
+		out.Usage.PromptTokens, out.Usage.CompletionTokens, out.Usage.Model)
 	return out, nil
 }
 
@@ -453,11 +454,18 @@ func (o *Orchestrator) persistObservations(ctx context.Context, ticketID string,
 }
 
 func (o *Orchestrator) appendMsg(ctx context.Context, ticketID, role, agentName, content string) {
+	o.appendMsgFull(ctx, ticketID, role, agentName, content, 0, 0, "")
+}
+
+// appendMsgFull 带用量版本的消息落库。
+func (o *Orchestrator) appendMsgFull(ctx context.Context, ticketID, role, agentName, content string, promptTokens, completionTokens int, model string) {
 	if content == "" {
 		return
 	}
 	if err := o.store.AppendMessage(ctx, ticketID, &ticket.Message{
-		Role: role, Agent: agentName, Content: content, CreatedAt: time.Now(),
+		Role: role, Agent: agentName, Content: content,
+		PromptTokens: promptTokens, CompletionTokens: completionTokens, Model: model,
+		CreatedAt: time.Now(),
 	}); err != nil {
 		slog.Warn("工单消息落库失败", "ticket", ticketID, "err", err)
 	}

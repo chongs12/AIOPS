@@ -38,7 +38,8 @@ func (a *IntentAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) 
 	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}}
 	applyScene(rc, NameIntent, &req)
 	var out intentLLM
-	if err := rc.LLM.ChatJSON(ctx, req, &out); err != nil {
+	usage, err := rc.LLM.ChatJSONUsage(ctx, req, &out)
+	if err != nil {
 		return nil, fmt.Errorf("intent 结构化输出失败: %w", err)
 	}
 
@@ -61,6 +62,7 @@ func (a *IntentAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) 
 	return &Output{
 		Note:    fmt.Sprintf("意图识别：类型=%s 服务=%s 时间窗=%d分钟（%s）", r.Type, r.Service, r.WindowMinutes, r.Reason),
 		Payload: r,
+		Usage:   usage,
 	}, nil
 }
 

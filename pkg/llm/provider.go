@@ -34,11 +34,13 @@ type Message struct {
 
 // ChatRequest 一次对话请求；Temperature/MaxTokens/Model 为零值时使用 provider 默认。
 // Model 支持按场景覆盖（管理面热更新），仅当 provider 侧配置同名/兼容模型时生效。
+// Agent 为场景归因标签（intent/rootcause/reply...），进入 ai_* 指标维度。
 type ChatRequest struct {
 	Messages    []Message
 	Temperature float64
 	MaxTokens   int
 	Model       string
+	Agent       string
 }
 
 // ChatResponse 一次对话结果（含用量，供指标统计）。
@@ -53,6 +55,7 @@ type ChatResponse struct {
 // Provider 单个聊天补全后端。
 type Provider interface {
 	Name() string
+	Model() string
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 }
 
@@ -106,6 +109,9 @@ type chatCompletionResp struct {
 }
 
 func (p *openaiProvider) Name() string { return p.opts.Name }
+
+// Model 返回该 provider 配置的默认模型名（归因维度兜底）。
+func (p *openaiProvider) Model() string { return p.opts.Model }
 
 // Chat 调用 POST {BaseURL}/chat/completions。
 func (p *openaiProvider) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {

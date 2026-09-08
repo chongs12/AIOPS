@@ -10,8 +10,9 @@ import (
 )
 
 // metrics LLM 调用指标，命名对齐 PreHire：
-// ai_calls_total{provider,status} / ai_tokens_total{provider,type} /
-// ai_call_duration_seconds{provider}（histogram）。
+// ai_calls_total{provider,model,agent,status} / ai_tokens_total{provider,model,agent,type} /
+// ai_call_duration_seconds{provider,model,agent}（histogram）。
+// 维度含 model/agent（场景），支撑 token 消费按场景归因与消费看板。
 type metrics struct {
 	calls    metric.Int64Counter
 	tokens   metric.Int64Counter
@@ -38,26 +39,50 @@ func newMetrics() *metrics {
 	return &mm
 }
 
-func (m *metrics) record(provider, status string, d time.Duration, resp *ChatResponse) {
+// record 记录一次 LLM 调用。model/agent 为归因维度（空值用 unknown 占位，保证序列标签完整）。
+func (m *metrics) record(provider, model, agent, status string, d time.Duration, resp *ChatResponse) {
 	if m == nil {
 		return
 	}
+	if model == "" {
+		model = "unknown"
+	}
+	if agent == "" {
+		agent = "unknown"
+	}
+	attrs := metric.WithAttributes(
+		attribute.String("provider", provider),
+		attribute.String("model", model),
+		attribute.String("agent", agent),
+	)
 	if m.calls != nil {
-		m.calls.Add(nil, 1,
-			metric.WithAttributes(attribute.String("provider", provider), attribute.String("status", status)))
+		m.calls.Add(nil, 1, metric.WithAttributes(
+			attribute.String("provider", provider),
+			attribute.String("model", model),
+			attribute.String("agent", agent),
+			attribute.String("status", status)))
 	}
 	if m.duration != nil {
-		m.duration.Record(nil, d.Seconds(),
-			metric.WithAttributes(attribute.String("provider", provider)))
+		m.duration.Record(nil, d.Seconds(), metric.WithAttributes(
+			attribute.String("provider", provider),
+			attribute.String("model", model),
+			attribute.String("agent", agent)))
 	}
 	if resp != nil && m.tokens != nil {
 		if resp.PromptTokens > 0 {
-			m.tokens.Add(nil, int64(resp.PromptTokens),
-				metric.WithAttributes(attribute.String("provider", provider), attribute.String("type", "prompt")))
+			m.tokens.Add(nil, int64(resp.PromptTokens), metric.WithAttributes(
+				attribute.String("provider", provider),
+				attribute.String("model", model),
+				attribute.String("agent", agent),
+				attribute.String("type", "prompt")))
 		}
 		if resp.CompletionTokens > 0 {
-			m.tokens.Add(nil, int64(resp.CompletionTokens),
-				metric.WithAttributes(attribute.String("provider", provider), attribute.String("type", "completion")))
+			m.tokens.Add(nil, int64(resp.CompletionTokens), metric.WithAttributes(
+				attribute.String("provider", provider),
+				attribute.String("model", model),
+				attribute.String("agent", agent),
+				attribute.String("type", "completion")))
 		}
 	}
+	_ = attrs // 保留：后续如需统一 attrs 可复用
 }

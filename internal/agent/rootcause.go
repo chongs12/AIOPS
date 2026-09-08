@@ -38,17 +38,18 @@ func (a *RootCauseAgent) Run(ctx context.Context, rc *RunContext) (*Output, erro
 		return nil, fmt.Errorf("rootcause prompt 渲染失败: %w", err)
 	}
 
-	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}}
+	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}, Agent: NameRootCause}
 	applyScene(rc, NameRootCause, &req)
 	var out rootCauseLLM
-	if err := rc.LLM.ChatJSON(ctx, req, &out); err != nil {
+	usage, err := rc.LLM.ChatJSONUsage(ctx, req, &out)
+	if err != nil {
 		return nil, fmt.Errorf("rootcause 结构化输出失败: %w", err)
 	}
 
 	r := a.toResult(rc.Board, &out)
 	r.NeedMoreQueries = a.sanitizeQueries(rc.Board, out.NeedMoreQueries)
 
-	return &Output{Note: a.noteFor(r), Payload: r}, nil
+	return &Output{Note: a.noteFor(r), Payload: r, Usage: usage}, nil
 }
 
 // toResult 结构化校验与证据绑定（防幻觉的硬约束）。

@@ -12,19 +12,58 @@ import (
 // jsonSystemSuffix 追加到 system 消息的结构化输出约束。
 const jsonSystemSuffix = "你的输出必须是单个合法 JSON 对象，不要输出任何解释、注释或 Markdown 代码围栏。"
 
-// ChatJSON 结构化输出：强约束 JSON 输出 → 剥围栏/抽取 JSON → 解析到 out；
-// 解析失败携带错误自动修复重试一次，仍失败则报错（含输出摘录）。
+// ChatUsage 一次结构化输出的 token 用量（含修复重试的累加）。
+type ChatUsage struct {
+	PromptTokens     int
+	CompletionTokens int
+	Model            string
+	Provider         string
+}
+
+func (u ChatUsage) add(o ChatUsage) ChatUsage {
+	return ChatUsage{
+		PromptTokens:     u.PromptTokens + o.PromptTokens,
+		CompletionTokens: u.CompletionTokens + o.CompletionTokens,
+		Model:            o.Model,
+		Provider:         o.Provider,
+	}
+}
+
+// usageOf 从 ChatResponse 提取用量（nil 安全）。
+func usageOf(resp *ChatResponse) ChatUsage {
+	if resp == nil {
+		return ChatUsage{}
+	}
+	return ChatUsage{
+		PromptTokens:     resp.PromptTokens,
+		CompletionTokens: resp.CompletionTokens,
+		Model:            resp.Model,
+		Provider:         resp.Provider,
+	}
+}
+
+// ChatJSON 结构化输出（不关心用量时的便捷封装）。
 func (c *Client) ChatJSON(ctx context.Context, req ChatRequest, out any) error {
+	_, err := c.ChatJSONUsage(ctx, req, out)
+	return err
+}
+
+// ChatJSONUsage 结构化输出：强约束 JSON 输出 → 剥围栏/抽取 JSON → 解析到 out；
+// 解析失败携带错误自动修复重试一次，仍失败则报错（含输出摘录）。
+// 返回的 ChatUsage 累加全部尝试（含失败与修复重试）的 token 消耗。
+func (c *Client) ChatJSONUsage(ctx context.Context, req ChatRequest, out any) (ChatUsage, error) {
 	messages := withJSONInstruction(req.Messages)
 	base := req
 	base.Messages = messages
 
+	var usage ChatUsage
 	resp, err := c.Chat(ctx, base)
 	if err != nil {
-		return err
+		return usage, err
 	}
+	usage = usage.add(usageOf(resp))
 	if err := decodeJSON(resp.Content, out); err == nil {
-		return nil
+		return usage, nil
 	}
 
 	// 修复重试：把上次的错误输出与解析错误回喂。
@@ -37,12 +76,13 @@ func (c *Client) ChatJSON(ctx context.Context, req ChatRequest, out any) error {
 	base.Messages = repair
 	resp2, err := c.Chat(ctx, base)
 	if err != nil {
-		return fmt.Errorf("结构化输出修复重试失败: %w", err)
+		return usage, fmt.Errorf("结构化输出修复重试失败: %w", err)
 	}
+	usage = usage.add(usageOf(resp2))
 	if err := decodeJSON(resp2.Content, out); err != nil {
-		return fmt.Errorf("结构化输出解析失败（已重试一次）: %w；末次输出: %s", err, excerpt(resp2.Content, 200))
+		return usage, fmt.Errorf("结构化输出解析失败（已重试一次）: %w；末次输出: %s", err, excerpt(resp2.Content, 200))
 	}
-	return nil
+	return usage, nil
 }
 
 // withJSONInstruction 保证消息里带有 JSON 输出约束（追加或融合进既有 system）。

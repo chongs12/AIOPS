@@ -62,10 +62,11 @@ type RunContext struct {
 	Ctx       context.Context   // 场景配置查询用（与 Run 的 ctx 分离）
 }
 
-// Output Agent 运行输出：用户可见叙述 + 强类型载荷。
+// Output Agent 运行输出：用户可见叙述 + 强类型载荷 + token 用量。
 type Output struct {
-	Note    string // 写入工单流水的阶段叙述
-	Payload any    // 按断言取 *IntentResult / *MetricsResult / *RootCauseResult / *ticket.Report
+	Note    string        // 写入工单流水的阶段叙述
+	Payload any           // 按断言取 *IntentResult / *MetricsResult / *RootCauseResult / *ticket.Report
+	Usage   llm.ChatUsage // 本次运行的 LLM token 用量（多 Agent 步骤各自独立）
 }
 
 // Agent 统一接口。

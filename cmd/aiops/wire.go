@@ -27,6 +27,7 @@ import (
 	"aiops/pkg/notify"
 	"aiops/pkg/ratelimit"
 	"aiops/pkg/tasks"
+	"aiops/pkg/telemetry"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
@@ -43,7 +44,7 @@ type app struct {
 
 // buildApp 按依赖顺序装配：存储 → 缓存/限流 → LLM → 工具层 → 案例库/审计/管理面
 // → Agent → 编排 → API。基础设施故障按各自降级语义处理，绝不阻塞启动。
-func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
+func buildApp(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry) (*app, error) {
 	a := &app{}
 
 	// 存储：PG 优先，不可达降级内存存储（重启丢数据，显式告警）。
@@ -271,7 +272,7 @@ func buildApp(ctx context.Context, cfg *config.Config) (*app, error) {
 	srv.WithVerifier(orch)
 	srv.WithDeadLister(deadLister)
 	srv.WithAuth(authSvc)
-	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver})
+	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver, Gatherer: tel.Gatherer()})
 	srv.WithAdmin(promptAdmin, caseStoreFull)
 	if store, ok := runtimeSceneCfg.(*agent.DBPromptStore); ok {
 		srv.WithProviderAdmin(store)

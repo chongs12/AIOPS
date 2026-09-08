@@ -36,7 +36,7 @@ func runServe(args []string) error {
 	})
 	defer tel.Shutdown(context.Background())
 
-	a, err := buildApp(ctx, cfg)
+	a, err := buildApp(ctx, cfg, tel)
 	if err != nil {
 		return err
 	}

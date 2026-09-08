@@ -37,10 +37,11 @@ func (a *ReplyAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) {
 		return nil, fmt.Errorf("reply prompt 渲染失败: %w", err)
 	}
 
-	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}}
+	req := llm.ChatRequest{Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}}, Agent: NameReply}
 	applyScene(rc, NameReply, &req)
 	var out reportLLM
-	if err := rc.LLM.ChatJSON(ctx, req, &out); err != nil {
+	usage, err := rc.LLM.ChatJSONUsage(ctx, req, &out)
+	if err != nil {
 		return nil, fmt.Errorf("reply 结构化输出失败: %w", err)
 	}
 
@@ -49,6 +50,7 @@ func (a *ReplyAgent) Run(ctx context.Context, rc *RunContext) (*Output, error) {
 	return &Output{
 		Note:    fmt.Sprintf("事故报告已生成（置信度 %.2f，引用 %d 项证据）", report.Confidence, len(report.Citations)),
 		Payload: report,
+		Usage:   usage,
 	}, nil
 }
 

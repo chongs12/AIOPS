@@ -99,9 +99,12 @@ type Report struct {
 
 // Message 工单流水消息（Agent 过程与用户对话共用，落库供推理回放）。
 type Message struct {
-	Seq       int       `json:"seq"`
-	Role      string    `json:"role"` // user|agent|system
-	Agent     string    `json:"agent,omitempty"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	Seq              int       `json:"seq"`
+	Role             string    `json:"role"` // user|agent|system
+	Agent            string    `json:"agent,omitempty"`
+	Content          string    `json:"content"`
+	PromptTokens     int       `json:"prompt_tokens,omitempty"` // Agent 步骤的 LLM 用量
+	CompletionTokens int       `json:"completion_tokens,omitempty"`
+	Model            string    `json:"model,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }

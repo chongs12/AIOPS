@@ -217,15 +217,15 @@ func scanTicket(scan func(dest ...any) error) (*Ticket, error) {
 
 func (s *PGStore) AppendMessage(ctx context.Context, ticketID string, m *Message) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO ticket_messages (seq, ticket_id, role, agent, content, created_at)
-VALUES ((SELECT COALESCE(MAX(seq),0)+1 FROM ticket_messages WHERE ticket_id=$1), $1, $2, $3, $4, COALESCE($5, now()))`,
-		ticketID, m.Role, m.Agent, m.Content, nullableTime(m.CreatedAt))
+INSERT INTO ticket_messages (seq, ticket_id, role, agent, content, prompt_tokens, completion_tokens, model, created_at)
+VALUES ((SELECT COALESCE(MAX(seq),0)+1 FROM ticket_messages WHERE ticket_id=$1), $1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()))`,
+		ticketID, m.Role, m.Agent, m.Content, m.PromptTokens, m.CompletionTokens, m.Model, nullableTime(m.CreatedAt))
 	return err
 }
 
 func (s *PGStore) ListMessages(ctx context.Context, ticketID string) ([]*Message, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT seq, role, agent, content, created_at FROM ticket_messages WHERE ticket_id=$1 ORDER BY seq`, ticketID)
+SELECT seq, role, agent, content, prompt_tokens, completion_tokens, model, created_at FROM ticket_messages WHERE ticket_id=$1 ORDER BY seq`, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -233,9 +233,12 @@ SELECT seq, role, agent, content, created_at FROM ticket_messages WHERE ticket_i
 	var out []*Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.Seq, &m.Role, &m.Agent, &m.Content, &m.CreatedAt); err != nil {
+		var pt, ct sql.NullInt64
+		var model sql.NullString
+		if err := rows.Scan(&m.Seq, &m.Role, &m.Agent, &m.Content, &pt, &ct, &model, &m.CreatedAt); err != nil {
 			return nil, err
 		}
+		m.PromptTokens, m.CompletionTokens, m.Model = int(pt.Int64), int(ct.Int64), model.String
 		out = append(out, &m)
 	}
 	return out, rows.Err()

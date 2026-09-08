@@ -112,14 +112,18 @@ func (c *Client) chatOnce(ctx context.Context, p Provider, fallbackIndex int, re
 	resp, err := p.Chat(sctx, req)
 	dur := time.Since(start)
 
+	model := req.Model
+	if model == "" {
+		model = p.Model()
+	}
 	if err != nil {
-		c.metrics.record(p.Name(), "error", dur, nil)
+		c.metrics.record(p.Name(), model, req.Agent, "error", dur, nil)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
-	c.metrics.record(p.Name(), "ok", dur, resp)
+	c.metrics.record(p.Name(), model, req.Agent, "ok", dur, resp)
 	span.SetAttributes(
 		attribute.Int("llm.prompt_tokens", resp.PromptTokens),
 		attribute.Int("llm.completion_tokens", resp.CompletionTokens),
