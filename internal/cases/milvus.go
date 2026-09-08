@@ -88,6 +88,15 @@ func (s *MilvusStore) List(ctx context.Context, limit int) ([]Case, error) {
 	return s.falls.List(ctx, limit)
 }
 
+// Delete 按 ticketID 删除向量（expr 过滤），并同步删除 PG 记录（PG 为事实源）。
+func (s *MilvusStore) Delete(ctx context.Context, ticketID string) error {
+	if err := s.cli.Delete(ctx, collection, "", fmt.Sprintf("ticket_id == %q", ticketID)); err != nil {
+		slog.Warn("Milvus 删除失败", "err", err)
+	}
+	// PG 同步删（事实源）；无论 Milvus 是否成功都尝试。
+	return s.falls.Delete(ctx, ticketID)
+}
+
 // Search 向量检索 topK；失败兜底 PG。
 func (s *MilvusStore) Search(ctx context.Context, query string, topK int) ([]Scored, error) {
 	sctx, cancel := context.WithTimeout(ctx, 3*time.Second)

@@ -2,7 +2,8 @@
 // 知识库：案例沉淀浏览 + 相似检索。
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listCases, searchCases, caseDetail, typeLabel } from '../api'
+import { listCases, searchCases, caseDetail, typeLabel, deleteCase } from '../api'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
 const items = ref([])
@@ -41,6 +42,24 @@ async function openDetail(ticketId) {
   drawer.value = true
 }
 
+const deleting = ref(false)
+
+async function removeCase(ticketId) {
+  try {
+    await ElMessageBox.confirm(`确定删除案例 ${ticketId}？此操作不可恢复。`, '删除案例', { type: 'warning' })
+  } catch { return }
+  deleting.value = true
+  try {
+    await deleteCase(ticketId)
+    ElMessage.success('案例已删除')
+    await load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '删除失败')
+  } finally {
+    deleting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -75,6 +94,7 @@ onMounted(load)
         <el-tag size="small" effect="plain">{{ typeLabel(c.type) }}</el-tag>
         <span class="muted">{{ c.service }}</span>
         <span class="muted" style="margin-left: auto">{{ new Date(c.created_at).toLocaleDateString('zh-CN') }}</span>
+        <el-button size="small" type="danger" text :loading="deleting" @click.stop="removeCase(c.ticket_id)">删除</el-button>
       </div>
       <div style="font-size: 13px; margin-top: 4px">{{ c.root_cause || c.summary }}</div>
     </div>

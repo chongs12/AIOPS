@@ -36,6 +36,7 @@ type Store interface {
 	Save(ctx context.Context, c *Case) error
 	Search(ctx context.Context, query string, topK int) ([]Scored, error)
 	List(ctx context.Context, limit int) ([]Case, error) // 全量列表（知识库页）
+	Delete(ctx context.Context, ticketID string) error   // 按工单 ID 删除案例
 	Backend() string
 }
 
@@ -140,6 +141,12 @@ FROM cases ORDER BY created_at DESC LIMIT $1`, limit)
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// Delete 按 ticketID 删除案例（PG 及 Milvus 由上层双写方各自实现）。
+func (s *PGStore) Delete(ctx context.Context, ticketID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM cases WHERE ticket_id=$1`, ticketID)
+	return err
 }
 
 // Search 载入近 500 条做 bigram 余弦排序。

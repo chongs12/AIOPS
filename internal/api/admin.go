@@ -53,6 +53,25 @@ func (s *Server) listDeadTasks(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", data)
 }
 
+// CaseDeleter 案例删除能力（cases.Store 实现）。
+type CaseDeleter interface {
+	Delete(ctx context.Context, ticketID string) error
+}
+
+// deleteCase 删除知识库案例（PG/Milvus 双后端）。
+func (s *Server) deleteCase(c *gin.Context) {
+	if s.caseDel == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "案例库未装配"})
+		return
+	}
+	ticketID := c.Param("ticket_id")
+	if err := s.caseDel.Delete(c.Request.Context(), ticketID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "案例已删除", "ticket_id": ticketID})
+}
+
 // Login 登录换 JWT。
 func (s *Server) Login(c *gin.Context) {
 	var req struct {

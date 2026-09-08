@@ -40,6 +40,7 @@ type Server struct {
 	audit      AuditReader         // 审计查询（可 nil）
 	prompts    PromptAdmin         // prompt 热更新（可 nil）
 	caseSearch CaseSearch          // 案例检索（可 nil）
+	caseDel    CaseDeleter         // 案例删除（可 nil）
 	authSvc    AuthBackend         // 鉴权后端（可 nil = 关闭）
 	queue      TaskSubmitter       // 异步任务队列（可 nil = goroutine 兜底）
 	dead       DeadLister          // 死信查询（可 nil）
@@ -82,6 +83,9 @@ func (s *Server) WithCache(c *cache.Cache) *Server { s.cache = c; return s }
 
 // WithMetricsGatherer 注入指标采集器（ai_usage 端点用）。
 func (s *Server) WithMetricsGatherer(g prometheus.Gatherer) *Server { s.metricsG = g; return s }
+
+// WithCaseDeleter 注入案例删除（PG/Milvus 双后端）。
+func (s *Server) WithCaseDeleter(d CaseDeleter) *Server { s.caseDel = d; return s }
 
 // WithDeadLister 注入死信查询（nil = 队列未装配）。
 func (s *Server) WithDeadLister(d DeadLister) *Server { s.dead = d; return s }
@@ -176,6 +180,7 @@ func (s *Server) Handler() http.Handler {
 	{
 		protected.POST("/tickets/:id/actions", s.actionTicket)
 		protected.POST("/k8s/actions", s.k8sAction)
+		protected.DELETE("/cases/:ticket_id", s.deleteCase) // 案例删除（知识库）
 		protected.PUT("/admin/prompts/:scene", s.updatePrompt)
 		protected.DELETE("/admin/prompts/:scene", s.resetPrompt)
 		protected.GET("/admin/providers", s.getProviders)

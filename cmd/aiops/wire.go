@@ -274,6 +274,7 @@ func buildApp(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry)
 	srv.WithAuth(authSvc)
 	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver, Gatherer: tel.Gatherer()})
 	srv.WithAdmin(promptAdmin, caseStoreFull)
+	srv.WithCaseDeleter(caseStoreFull)
 	if store, ok := runtimeSceneCfg.(*agent.DBPromptStore); ok {
 		srv.WithProviderAdmin(store)
 	}
