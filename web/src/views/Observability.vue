@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import echarts from '../lib/echarts'
 import { obsOverview, obsQuery } from '../api'
 import SkeletonCard from '../components/SkeletonCard.vue'
+import AiUsageCard from '../components/AiUsageCard.vue'
 
 const overview = ref(null)
 const errChart = ref(null)
@@ -130,6 +131,8 @@ onUnmounted(() => {
       <div class="card-title">P99 延迟</div>
       <div ref="p99Chart" style="height: 240px"></div>
     </div>
+
+    <AiUsageCard />
 
     <div class="card">
       <div class="card-title">服务存活状态

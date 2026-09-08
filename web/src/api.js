@@ -92,3 +92,5 @@ export const getProviderChain = () => http.get('/api/v1/admin/providers').then(r
 export const setProviderChain = (providers) => http.put('/api/v1/admin/providers', { providers }).then(r => r.data)
 
 export const deleteTicket = (id) => http.delete(`/api/v1/tickets/${id}`).then(r => r.data)
+
+export const aiUsage = () => http.get('/api/v1/observability/ai_usage').then(r => r.data)
