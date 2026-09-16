@@ -35,11 +35,9 @@ type ClientOptions struct {
 	MaxConcurrency int
 }
 
-// NewClient 构造客户端；providers 非空且首个为默认主 provider。
+// NewClient 构造客户端；providers 可为空（provider watcher 热注入场景），
+// 空链时 Chat 返回 ErrNoProvider。
 func NewClient(providers []Provider, opts ClientOptions) (*Client, error) {
-	if len(providers) == 0 {
-		return nil, ErrNoProvider
-	}
 	if opts.MaxConcurrency <= 0 {
 		opts.MaxConcurrency = 4
 	}
@@ -84,6 +82,9 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, erro
 	defer release()
 
 	providers := c.current()
+	if len(providers) == 0 {
+		return nil, ErrNoProvider
+	}
 	var lastErr error
 	for i, p := range providers {
 		resp, err := c.chatOnce(ctx, p, i, req)

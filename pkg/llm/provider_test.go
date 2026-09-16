@@ -129,8 +129,13 @@ func TestClientAllFail(t *testing.T) {
 }
 
 func TestClientNoProvider(t *testing.T) {
-	if _, err := NewClient(nil, ClientOptions{}); !errors.Is(err, ErrNoProvider) {
-		t.Fatalf("err = %v", err)
+	// 新语义：允许空链构造（provider watcher 热注入场景），Chat 时返回 ErrNoProvider。
+	c, err := NewClient(nil, ClientOptions{})
+	if err != nil {
+		t.Fatalf("空链构造不应报错: %v", err)
+	}
+	if _, err := c.Chat(context.Background(), ChatRequest{Messages: []Message{{Role: RoleUser, Content: "x"}}}); !errors.Is(err, ErrNoProvider) {
+		t.Fatalf("空链 Chat 应返回 ErrNoProvider, got %v", err)
 	}
 }
 

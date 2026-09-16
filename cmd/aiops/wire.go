@@ -61,11 +61,15 @@ func buildApp(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry)
 		NegativeTTL: time.Duration(cfg.Cache.NegativeTTLSeconds) * time.Second,
 	})
 
-	// LLM：无可用 key 时为 nil（工单处理将明确转 failed 而非静默 mock）。
+	// LLM：有 key 时从配置建链；无 key 时建空链 Client——
+	// provider watcher 检测到管理面配置后热注入，工单处理随即恢复（无需重启）。
 	llmc := buildLLM(cfg)
 	a.llmEnabled = llmc != nil
 	if llmc == nil {
-		slog.Warn("LLM 未配置（设置 LLM_API_KEY），工单处理将提示配置缺失")
+		if c0, err := llm.NewClient(nil, llm.ClientOptions{}); err == nil {
+			llmc = c0
+		}
+		slog.Warn("LLM 未配置（设置 LLM_API_KEY），等待管理面热注入")
 	}
 
 	// 工具层。
@@ -200,7 +204,7 @@ func buildApp(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry)
 	})
 
 	// provider 热插拔（P7 增补）：后台监听 DB provider 链配置，变化即 SwapProviders。
-	if db != nil && llmc != nil && runtimeSceneCfg != nil {
+	if db != nil && llmc != nil {
 		if store, ok := runtimeSceneCfg.(*agent.DBPromptStore); ok {
 			go func() {
 				last := ""

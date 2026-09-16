@@ -88,7 +88,7 @@ async function loadChain() {
 
 function addProvider() {
   chain.value.push({ name: '', base_url: '', api_key: '', model: '',
-    timeout_seconds: 120, max_tokens: 4096, temperature: 0.2 })
+    timeout_seconds: 300, max_tokens: 4096, temperature: 0.2 })
 }
 
 function removeProvider(i) {
