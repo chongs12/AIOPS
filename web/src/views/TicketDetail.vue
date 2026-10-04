@@ -2,8 +2,10 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  getTicket, listObservations, listAudit, replyTicket, runAction, streamTicket,
+  getTicket, listObservations, listAudit, replyTicket, streamTicket,
   statusType, statusLabel, typeLabel, agentLabel, obsQuery, rateTicket,
+  createRemediation, listRemediations, approveRemediation, rejectRemediation,
+  remediationPhaseType, remediationPhaseLabel,
 } from '../api'
 import echarts from '../lib/echarts'
 import ConfidenceGauge from '../components/ConfidenceGauge.vue'
@@ -68,6 +70,7 @@ async function load() {
   tk.value = await getTicket(id)
   observations.value = (await listObservations(id)).items || []
   try { audit.value = (await listAudit(id)).items || [] } catch { /* 内存模式无审计查询 */ }
+  try { remediations.value = (await listRemediations(id)).items || [] } catch { /* CR 能力未装配（本地无 K8s） */ }
   scrollBottom()
 }
 
@@ -76,6 +79,10 @@ function renderMsg(m) {
   const msgs = tk.value.messages || []
   if (msgs.some(x => x.seq === m.seq)) return
   msgs.push(m)
+  // 处置 CR 阶段变化消息到达时同步刷新审批区块
+  if (m.agent === 'remediation') {
+    listRemediations(id).then(r => { remediations.value = r.items || [] }).catch(() => {})
+  }
   scrollBottom()
 }
 
@@ -111,9 +118,10 @@ async function send() {
   await load()
 }
 
-// ---- 处置动作（人工确认门在前端 + 后端审计双保险）----
+// ---- 处置（Remediation CR 平台化链路）：发起 → 人工审批门 → operator 执行/回验 ----
 const confirmDlg = ref(false)
 const pendingAction = ref(null)
+const remediations = ref([])
 
 function askAction(rec) {
   const target = (rec.target || '').replace(/^deployment\//, '')
@@ -121,25 +129,56 @@ function askAction(rec) {
   confirmDlg.value = true
 }
 
-async function execAction() {
+async function createCR() {
   const p = pendingAction.value
-  const tool = p.rec.action === 'rollout_undo' ? 'k8s.rollout_undo' : 'k8s.scale'
-  const input_ = tool === 'k8s.scale'
-    ? { deployment: p.deployment, replicas: Number(p.replicas) }
-    : { deployment: p.deployment }
+  const action = (p.rec.action === 'rollout_undo' || p.rec.action === 'k8s.rollout_undo')
+    ? 'k8s.rollout_undo' : 'k8s.scale'
   busy.value = true
   try {
-    const res = await runAction(id, tool, input_)
-    ElMessage[res.status === 'ok' ? 'success' : 'warning'](
-      res.status === 'ok' ? '处置已执行' : `未执行: ${res.degraded_reason || ''}`)
+    const res = await createRemediation(id, {
+      deployment: p.deployment, action,
+      replicas: action === 'k8s.scale' ? Number(p.replicas) : undefined,
+      reason: p.rec.description,
+    })
+    ElMessage.success(res.message || '处置 CR 已创建，等待审批')
     confirmDlg.value = false
     await load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '创建失败')
   } finally {
     busy.value = false
   }
 }
 
-import { ElMessage } from 'element-plus'
+async function approve(name) {
+  try {
+    await ElMessageBox.confirm(`确认审批通过 ${name}？通过后 operator 将执行处置并自动回验恢复效果。`, '人工审批门', { type: 'warning' })
+  } catch { return }
+  try {
+    const res = await approveRemediation(name)
+    ElMessage.success(res.message || '已审批通过')
+    await load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '审批失败')
+  }
+}
+
+async function reject(name) {
+  let note = ''
+  try {
+    const r = await ElMessageBox.prompt('拒绝原因（写入处置 CR 审计，可追溯）', '拒绝处置', { inputValue: '副本数不合理' })
+    note = r.value || ''
+  } catch { return }
+  try {
+    const res = await rejectRemediation(name, note)
+    ElMessage.info(res.message || '已拒绝')
+    await load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || '操作失败')
+  }
+}
+
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 onMounted(async () => { await load(); connect(); loadTrend() })
 onUnmounted(() => es && es.close())
@@ -216,7 +255,7 @@ onUnmounted(() => es && es.close())
               <el-button size="small" type="primary" plain
                          v-if="['scale', 'rollout_undo', 'k8s.scale', 'k8s.rollout_undo'].includes(rec.action)"
                          @click="askAction(rec)">
-                执行
+                发起处置
               </el-button>
             </div>
           </div>
@@ -248,6 +287,41 @@ onUnmounted(() => es && es.close())
                   :placeholder="tk.status === 'awaiting_info' ? '补充工单信息，系统将从断点续跑…' : '补充信息…'" />
         <el-button type="primary" :disabled="!input.trim()" @click="send">发送<br>断点续跑</el-button>
       </div>
+    </div>
+
+    <!-- 处置审批（Remediation CR 平台化链路） -->
+    <div class="card" v-if="remediations.length" style="margin-top: 18px">
+      <div class="card-title">处置审批
+        <span class="muted" style="margin-left: 8px">Remediation CR · 审批门 → operator 执行 → 自动回验</span>
+      </div>
+      <el-table :data="remediations" size="small">
+        <el-table-column prop="name" label="CR" min-width="180">
+          <template #default="{ row }"><span class="mono">{{ row.name }}</span></template>
+        </el-table-column>
+        <el-table-column prop="action" label="动作" width="150" />
+        <el-table-column prop="deployment" label="目标" min-width="140" />
+        <el-table-column label="参数" width="90">
+          <template #default="{ row }">{{ row.replicas != null ? row.replicas + ' 副本' : '—' }}</template>
+        </el-table-column>
+        <el-table-column label="阶段" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="remediationPhaseType(row.phase)" effect="dark">
+              {{ remediationPhaseLabel(row.phase) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="进展" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="approver" label="审批人" width="90" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <template v-if="row.phase === 'PendingApproval'">
+              <el-button size="small" type="success" @click="approve(row.name)">审批</el-button>
+              <el-button size="small" type="danger" plain @click="reject(row.name)">拒绝</el-button>
+            </template>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <!-- 满意度评价（resolved 后） -->
@@ -305,21 +379,21 @@ onUnmounted(() => es && es.close())
 
   <EvidenceDrawer ref="evidenceDrawer" :ticket-id="id" />
 
-  <el-dialog v-model="confirmDlg" title="人工确认处置动作" width="460">
+  <el-dialog v-model="confirmDlg" title="发起处置（Remediation CR）" width="460">
     <p style="font-size: 13px; margin-bottom: 10px">
       {{ pendingAction?.rec.description }}
     </p>
     <el-form label-width="90px">
       <el-form-item label="目标"><span class="mono">{{ pendingAction?.deployment }}</span></el-form-item>
-      <el-form-item v-if="pendingAction?.rec.action === 'scale'" label="目标副本数">
+      <el-form-item v-if="pendingAction?.rec.action !== 'rollout_undo' && pendingAction?.rec.action !== 'k8s.rollout_undo'" label="目标副本数">
         <el-input-number v-model="pendingAction.replicas" :min="0" :max="10" />
       </el-form-item>
       <el-alert type="warning" :closable="false"
-                title="变更操作将写入审计日志，执行后自动复查服务状态" />
+                title="创建后需人工审批；审批通过由 operator 自动执行并回验，全程 kubectl get remediations 可观察" />
     </el-form>
     <template #footer>
       <el-button @click="confirmDlg = false">取消</el-button>
-      <el-button type="primary" :loading="busy" @click="execAction">确认执行</el-button>
+      <el-button type="primary" :loading="busy" @click="createCR">创建待审批 CR</el-button>
     </template>
   </el-dialog>
 </template>

@@ -1,4 +1,6 @@
 // 告警接入（P6）：webhook 收 Alertmanager/简化格式 → 去重 → 自动建单。
+// 处置联动：告警携带 aiops-remediation-action 标签时，建单同时自动创建
+// 待审批的 Remediation CR（审批门仍在人工，operator 执行绝不自动触发）。
 package api
 
 import (
@@ -7,9 +9,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
+	"aiops/internal/remediation"
 	"aiops/internal/ticket"
 	"aiops/pkg/cache"
 
@@ -47,12 +52,13 @@ func (s *Server) alertWebhook(c *gin.Context) {
 	}
 
 	type result struct {
-		TicketID string `json:"ticket_id"`
-		Deduped  bool   `json:"deduped"`
+		TicketID    string `json:"ticket_id"`
+		Deduped     bool   `json:"deduped"`
+		Remediation string `json:"remediation,omitempty"` // 联动创建的处置 CR 名
 	}
 	results := []result{}
 
-	handle := func(title, content, service, severity, fingerprint string) {
+	handle := func(title, content, service, severity, fingerprint string, labels map[string]string) {
 		if title == "" {
 			return
 		}
@@ -86,7 +92,7 @@ func (s *Server) alertWebhook(c *gin.Context) {
 		} else {
 			go s.orch.Process(traceContext(c.Request.Context()), tk.ID)
 		}
-		results = append(results, result{TicketID: tk.ID, Deduped: false})
+		results = append(results, result{TicketID: tk.ID, Remediation: s.tryCreateRemediation(c.Request.Context(), tk.ID, labels)})
 	}
 
 	if len(in.Alerts) > 0 {
@@ -99,13 +105,54 @@ func (s *Server) alertWebhook(c *gin.Context) {
 			if content == "" {
 				content = fmt.Sprintf("告警 %s（labels: %v）", a.Labels["alertname"], a.Labels)
 			}
-			handle(title, content, a.Labels["service"], a.Labels["severity"], a.Fingerprint)
+			handle(title, content, a.Labels["service"], a.Labels["severity"], a.Fingerprint, a.Labels)
 		}
 	} else {
-		handle(in.Title, in.Content, in.Service, in.Severity, "")
+		handle(in.Title, in.Content, in.Service, in.Severity, "", nil)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": results})
+}
+
+// tryCreateRemediation 告警→处置联动：告警标签声明处置意图时自动创建
+// 待审批 Remediation CR，与工单双向关联（label aiops.io/ticket）。
+// 失败仅告警不阻断建单主流程。标签约定：
+//
+//	aiops-remediation-action: k8s.scale | k8s.rollout_undo
+//	aiops-deployment:         目标 Deployment 名
+//	aiops-replicas:           scale 目标副本数（scale 必填）
+//	aiops-reason:             根因摘要（可选）
+func (s *Server) tryCreateRemediation(ctx context.Context, ticketID string, labels map[string]string) string {
+	if s.remedy == nil || len(labels) == 0 {
+		return ""
+	}
+	action := labels["aiops-remediation-action"]
+	if action == "" {
+		return ""
+	}
+	deployment := labels["aiops-deployment"]
+	if deployment == "" {
+		slog.Warn("告警要求自动处置但缺 aiops-deployment 标签，跳过 CR 创建", "ticket", ticketID)
+		return ""
+	}
+	in := remediation.CreateInput{
+		TicketRef: ticketID, Deployment: deployment, Action: action, Reason: labels["aiops-reason"],
+	}
+	if r := labels["aiops-replicas"]; r != "" {
+		if n, err := strconv.ParseInt(r, 10, 32); err == nil {
+			rep := int32(n)
+			in.Replicas = &rep
+		} else {
+			slog.Warn("aiops-replicas 非法，按缺省处理", "value", r, "err", err)
+		}
+	}
+	rem, err := s.remedy.Create(ctx, in)
+	if err != nil {
+		slog.Warn("告警联动创建处置 CR 失败（工单照常流转）", "ticket", ticketID, "err", err)
+		return ""
+	}
+	slog.Info("告警联动已创建待审批处置 CR", "ticket", ticketID, "rem", rem.Name)
+	return rem.Name
 }
 
 // dedupGet 幂等去重读取（复用缓存包；Redis/L1，故障降级为不去重——重复告警可容忍，不阻塞）。

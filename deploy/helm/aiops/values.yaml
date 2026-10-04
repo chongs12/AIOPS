@@ -35,3 +35,7 @@ secrets:
   redisPassword: aiops_dev
   llmApiKey: ""
   jwtSecret: change-me-in-prod
+
+operator:
+  enabled: true    # Remediation Operator（处置闭环平台化）
+  replicas: 2      # 双副本 + leader election

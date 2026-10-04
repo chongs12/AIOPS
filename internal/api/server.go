@@ -48,6 +48,7 @@ type Server struct {
 	cache      *cache.Cache        // 告警去重等（可 nil）
 	metricsG   prometheus.Gatherer // 指标采集器（ai_usage 用，可 nil）
 	providers  ProviderAdmin       // provider 链热插拔（可 nil）
+	remedy     RemediationAPI      // 处置 CR 门面（可 nil = K8s 不可用）
 	jbase      string              // Jaeger 查询页基地址（trace 链接）
 }
 
@@ -142,10 +143,11 @@ func (s *Server) Handler() http.Handler {
 		v1.GET("/tickets/:id/observations", s.listObservations)
 		v1.DELETE("/tickets/:id", s.deleteTicket) // 删除工单（保护组：鉴权开启时需 token）
 		v1.GET("/tickets/:id/observations/:oid", s.getObservation)
-		v1.POST("/tickets/:id/reply", s.replyTicket)  // HITL：补充信息，断点续跑
-		v1.PATCH("/tickets/:id/rating", s.rateTicket) // 满意度评价
-		v1.GET("/tickets/:id/stream", s.streamTicket) // SSE 推流
-		v1.GET("/tickets/:id/audit", s.listAudit)     // 审计记录
+		v1.POST("/tickets/:id/reply", s.replyTicket)                  // HITL：补充信息，断点续跑
+		v1.PATCH("/tickets/:id/rating", s.rateTicket)                 // 满意度评价
+		v1.GET("/tickets/:id/stream", s.streamTicket)                 // SSE 推流
+		v1.GET("/tickets/:id/audit", s.listAudit)                     // 审计记录
+		v1.GET("/tickets/:id/remediations", s.listTicketRemediations) // 工单处置 CR 记录
 		admin := v1.Group("/admin")
 		{
 			admin.GET("/prompts", s.listPrompts)
@@ -180,7 +182,11 @@ func (s *Server) Handler() http.Handler {
 	{
 		protected.POST("/tickets/:id/actions", s.actionTicket)
 		protected.POST("/k8s/actions", s.k8sAction)
-		protected.DELETE("/cases/:ticket_id", s.deleteCase) // 案例删除（知识库）
+		protected.POST("/tickets/:id/remediations", s.createRemediation)    // 处置 CR：发起
+		protected.POST("/remediations/:name/approve", s.approveRemediation) // 处置 CR：审批
+		protected.POST("/remediations/:name/reject", s.rejectRemediation)   // 处置 CR：拒绝
+		protected.GET("/remediations", s.listRemediations)                  // 处置 CR：查询
+		protected.DELETE("/cases/:ticket_id", s.deleteCase)                 // 案例删除（知识库）
 		protected.PUT("/admin/prompts/:scene", s.updatePrompt)
 		protected.DELETE("/admin/prompts/:scene", s.resetPrompt)
 		protected.GET("/admin/providers", s.getProviders)

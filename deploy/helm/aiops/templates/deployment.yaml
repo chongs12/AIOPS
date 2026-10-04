@@ -9,6 +9,12 @@ spec:
   template:
     metadata:
       labels: { app: aiops }
+      {{- if .Values.metrics.scrape }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6060"
+        prometheus.io/path: "/metrics"
+      {{- end }}
     spec:
       serviceAccountName: aiops
       hostAliases:
@@ -19,12 +25,6 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: IfNotPresent
           ports: [{ containerPort: 8090 }, { containerPort: 6060 }]
-          {{- if .Values.metrics.scrape }}
-          annotations:
-            prometheus.io/scrape: "true"
-            prometheus.io/port: "6060"
-            prometheus.io/path: "/metrics"
-          {{- end }}
           envFrom:
             - secretRef: { name: aiops-secrets }
           env:

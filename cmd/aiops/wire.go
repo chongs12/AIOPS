@@ -12,10 +12,12 @@ import (
 
 	"aiops/internal/agent"
 	"aiops/internal/api"
+	"aiops/internal/apis/scheme"
 	"aiops/internal/audit"
 	"aiops/internal/auth"
 	"aiops/internal/cases"
 	"aiops/internal/orchestrator"
+	"aiops/internal/remediation"
 	"aiops/internal/ticket"
 	"aiops/internal/tool"
 	"aiops/internal/tool/k8stool"
@@ -32,6 +34,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
 	kubernetes "k8s.io/client-go/kubernetes"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // app 装配完成的全部运行时依赖。
@@ -86,6 +89,7 @@ func buildApp(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry)
 		return nil, err
 	}
 	// K8s 工具（日志/事件/Pod 状态只读 + 扩缩容/回滚变更类）。失败不阻塞启动。
+	var remedyClient api.RemediationAPI
 	if k8sBase, err := buildK8sBase(cfg); err == nil {
 		for _, t := range k8stool.NewReadTools(k8sBase) {
 			if err := reg.Register(t); err != nil {
@@ -98,6 +102,15 @@ func buildApp(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry)
 			}
 		}
 		slog.Info("K8s 工具就绪", "namespace", cfg.K8s.Namespace)
+		// 处置 CR 门面（Remediation Operator 链路）：服务端创建/审批 CR，
+		// operator 执行与回验；阶段变化由镜像循环写回工单消息流。
+		if rc, err := buildRemediationClient(cfg); err == nil {
+			remedyClient = rc
+			go remediation.NewSync(rc, a.store).Run(ctx)
+			slog.Info("处置 CR 门面就绪", "namespace", cfg.K8s.Namespace)
+		} else {
+			slog.Warn("Remediation 客户端构建失败，处置 CR 能力不可用", "err", err)
+		}
 	} else {
 		slog.Warn("K8s 客户端构建失败，K8s 工具不可用", "err", err)
 	}
@@ -276,6 +289,7 @@ func buildApp(ctx context.Context, cfg *config.Config, tel *telemetry.Telemetry)
 	srv.WithVerifier(orch)
 	srv.WithDeadLister(deadLister)
 	srv.WithAuth(authSvc)
+	srv.WithRemediation(remedyClient)
 	srv.WithObservability(&api.ObsDeps{Templates: lib, Tools: executor, Resolve: resolver, Gatherer: tel.Gatherer()})
 	srv.WithAdmin(promptAdmin, caseStoreFull)
 	srv.WithCaseDeleter(caseStoreFull)
@@ -364,6 +378,19 @@ func buildK8sBase(cfg *config.Config) (k8stool.Base, error) {
 		Namespace: cfg.K8s.Namespace,
 		Timeout:   time.Duration(cfg.K8s.TimeoutSeconds) * time.Second,
 	}, nil
+}
+
+// buildRemediationClient 构造服务端处置 CR 门面（controller-runtime client）。
+func buildRemediationClient(cfg *config.Config) (*remediation.Client, error) {
+	rc, err := k8sRestConfig(cfg.K8s.Kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	c, err := ctrlclient.New(rc, ctrlclient.Options{Scheme: scheme.Scheme})
+	if err != nil {
+		return nil, err
+	}
+	return remediation.NewClient(c, cfg.K8s.Namespace), nil
 }
 
 // hostOf 从 DSN 提取主机地址（日志脱敏用，绝不输出凭证）。

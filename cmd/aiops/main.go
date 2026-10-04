@@ -1,4 +1,4 @@
-// aiops 服务入口：serve（默认）启动 HTTP 服务；probe 执行环境连通性自检。
+// aiops 服务入口：serve（默认）启动 HTTP 服务；operator 启动处置闭环控制器；probe 执行环境连通性自检。
 package main
 
 import (
@@ -24,6 +24,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "operator":
+			if err := runOperator(os.Args[2:]); err != nil {
+				slog.Error("operator 退出", "err", err)
+				os.Exit(1)
+			}
+			return
 		case "help", "-h", "--help":
 			usage()
 			return
@@ -43,8 +49,9 @@ func usage() {
 	fmt.Println(`aiops —— AIOps 运维工单多智能体系统
 
 用法:
-  aiops serve [flags]   启动服务（默认）
-  aiops probe [flags]   环境连通性自检（Prometheus/Jaeger/K8s/Redis/PG/OTLP 回环）
+  aiops serve [flags]      启动服务（默认）
+  aiops operator [flags]   启动 Remediation Operator（watch/驱动处置闭环）
+  aiops probe [flags]      环境连通性自检（Prometheus/Jaeger/K8s/Redis/PG/OTLP 回环）
 
 通用 flags:
   -config string   配置文件路径（默认 configs/config.yaml）`)

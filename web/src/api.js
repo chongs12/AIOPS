@@ -60,6 +60,7 @@ export const typeLabel = (t) => ({
 export const agentLabel = (a) => ({
   intent: '🧭 意图识别', metrics: '📊 指标检索', log: '📜 日志解析',
   rootcause: '🔍 根因推理', reply: '📝 报告生成', action: '⚡ 处置执行',
+  remediation: '🛠️ Remediation',
 }[a] || a || '系统')
 
 // ---- 可观测 ----
@@ -92,6 +93,25 @@ export const getProviderChain = () => http.get('/api/v1/admin/providers').then(r
 export const setProviderChain = (providers) => http.put('/api/v1/admin/providers', { providers }).then(r => r.data)
 
 export const deleteTicket = (id) => http.delete(`/api/v1/tickets/${id}`).then(r => r.data)
+
+// ---- Remediation Operator（处置 CR 平台化链路） ----
+export const createRemediation = (ticketId, payload) =>
+  http.post(`/api/v1/tickets/${ticketId}/remediations`, payload).then(r => r.data)
+export const listRemediations = (ticketId) =>
+  http.get(`/api/v1/tickets/${ticketId}/remediations`).then(r => r.data)
+export const approveRemediation = (name, note = '') =>
+  http.post(`/api/v1/remediations/${name}/approve`, { note }).then(r => r.data)
+export const rejectRemediation = (name, note = '') =>
+  http.post(`/api/v1/remediations/${name}/reject`, { note }).then(r => r.data)
+
+export const remediationPhaseType = (p) => ({
+  PendingApproval: 'warning', Executing: 'primary', Verifying: 'primary',
+  Succeeded: 'success', Failed: 'danger', Escalated: 'danger', Rejected: 'info',
+}[p] || 'info')
+export const remediationPhaseLabel = (p) => ({
+  PendingApproval: '待审批', Executing: '执行中', Verifying: '回验中',
+  Succeeded: '已恢复', Failed: '执行失败', Escalated: '转人工', Rejected: '已拒绝',
+}[p] || p || '待审批')
 
 export const aiUsage = () => http.get('/api/v1/observability/ai_usage').then(r => r.data)
 

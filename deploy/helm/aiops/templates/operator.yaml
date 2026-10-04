@@ -1,0 +1,53 @@
+{{- if .Values.operator.enabled }}
+# Remediation Operator：与 aiops-server 同镜像、不同子命令（args 覆盖 ENTRYPOINT 的 serve）。
+# 双副本 + leader election（Lease）：HA 的同时保证同一处置只被当前 leader 执行。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-operator
+  labels: { app: aiops-operator }
+spec:
+  replicas: {{ .Values.operator.replicas }}
+  selector:
+    matchLabels: { app: aiops-operator }
+  template:
+    metadata:
+      labels: { app: aiops-operator }
+      {{- if .Values.metrics.scrape }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8060"
+        prometheus.io/path: "/metrics"
+      {{- end }}
+    spec:
+      serviceAccountName: aiops
+      containers:
+        - name: operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          # 同镜像不同子命令：镜像 ENTRYPOINT 为 ["/aiops","serve",…]，
+          # K8s 的 args 只会追加到 ENTRYPOINT 之后，必须用 command 整体覆盖
+          command: ["/aiops", "operator", "-config", "/etc/aiops/config.yaml"]
+          ports: [{ containerPort: 8060 }, { containerPort: 8081 }]
+          envFrom:
+            - secretRef: { name: aiops-secrets }
+          env:
+            - name: AIOPS_PROMETHEUS_BASE_URL
+              value: {{ .Values.config.prometheusBaseUrl | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/aiops
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8081 }
+            initialDelaySeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8081 }
+            initialDelaySeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+      volumes:
+        - name: config
+          configMap: { name: aiops-config }
+{{- end }}

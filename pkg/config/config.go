@@ -33,6 +33,7 @@ type Config struct {
 	Auth       AuthCfg       `yaml:"auth" env:"AUTH"`
 	Notify     NotifyCfg     `yaml:"notify" env:"NOTIFY"`
 	Verify     VerifyCfgYaml `yaml:"verify_recovery" env:"VERIFY"`
+	Operator   OperatorCfg   `yaml:"operator" env:"OPERATOR"`
 }
 
 // NotifyCfg 通知配置。
@@ -44,6 +45,26 @@ type NotifyCfg struct {
 type VerifyCfgYaml struct {
 	WaitSeconds int     `yaml:"wait_seconds" env:"WAIT_SECONDS"`
 	Threshold   float64 `yaml:"threshold" env:"THRESHOLD"`
+}
+
+// OperatorCfg Remediation Operator 配置（aiops operator 子命令）。
+type OperatorCfg struct {
+	// LeaderElection 双副本部署时的主选举（coordination.k8s.io Lease）。
+	LeaderElection bool `yaml:"leader_election" env:"LEADER_ELECTION"`
+	// LeaderElectionID Lease 资源名（同组 operator 需一致）。
+	LeaderElectionID string `yaml:"leader_election_id" env:"LEADER_ELECTION_ID"`
+	// MetricsAddr 控制器内建指标监听地址（controller-runtime registry）。
+	MetricsAddr string `yaml:"metrics_addr" env:"METRICS_ADDR"`
+	// Verify 回验默认值；CR spec.verify 的零值字段回落到这里。
+	Verify OperatorVerify `yaml:"verify" env:"VERIFY"`
+}
+
+// OperatorVerify 回验默认参数。
+type OperatorVerify struct {
+	Template    string  `yaml:"template" env:"TEMPLATE"`
+	Threshold   float64 `yaml:"threshold" env:"THRESHOLD"`
+	WaitSeconds int     `yaml:"wait_seconds" env:"WAIT_SECONDS"`
+	Attempts    int     `yaml:"attempts" env:"ATTEMPTS"`
 }
 
 // AuthCfg 鉴权配置：默认关闭，启用后管理面/写操作强制 JWT。
@@ -184,6 +205,12 @@ func Default() *Config {
 		Auth:      AuthCfg{Enabled: false, JWTSecret: "${JWT_SECRET}", TTLHours: 24},
 		Notify:    NotifyCfg{},
 		Verify:    VerifyCfgYaml{WaitSeconds: 60, Threshold: 0.05},
+		Operator: OperatorCfg{
+			LeaderElection:   true,
+			LeaderElectionID: "aiops-operator.aiops.io",
+			MetricsAddr:      ":8060",
+			Verify:           OperatorVerify{Template: "http_5xx_rate", Threshold: 0.05, WaitSeconds: 60, Attempts: 3},
+		},
 		LLM: LLM{
 			Providers: []LLMProvider{{
 				Name:           "glm",

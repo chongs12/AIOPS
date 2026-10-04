@@ -22,14 +22,15 @@ func k8sRollbackRequest(deployment string) rollbackSpec { return rollbackSpec{de
 
 // Rollback 通过「取上一 revision 的 ReplicaSet 模板回写 Deployment」实现回滚。
 // （client-go 新版本已移除 Rollback API。）
-func (b *Base) Rollback(ctx context.Context, spec rollbackSpec) error {
+// 返回回滚到的目标 revision，供结果数据与审计/回验记录。
+func (b *Base) Rollback(ctx context.Context, spec rollbackSpec) (int64, error) {
 	dep, err := b.Client.AppsV1().Deployments(b.Namespace).Get(ctx, spec.deployment, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("获取 deployment: %w", err)
+		return 0, fmt.Errorf("获取 deployment: %w", err)
 	}
 	rss, err := b.Client.AppsV1().ReplicaSets(b.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("列出 replicasets: %w", err)
+		return 0, fmt.Errorf("列出 replicasets: %w", err)
 	}
 	var owned []appsv1.ReplicaSet
 	for _, rs := range rss.Items {
@@ -41,7 +42,7 @@ func (b *Base) Rollback(ctx context.Context, spec rollbackSpec) error {
 		}
 	}
 	if len(owned) < 2 {
-		return fmt.Errorf("无历史 revision 可回滚")
+		return 0, fmt.Errorf("无历史 revision 可回滚")
 	}
 	revOf := func(rs appsv1.ReplicaSet) int64 {
 		n, _ := strconv.ParseInt(rs.Annotations["deployment.kubernetes.io/revision"], 10, 64)
@@ -54,14 +55,13 @@ func (b *Base) Rollback(ctx context.Context, spec rollbackSpec) error {
 	}
 	pb, err := json.Marshal(patch)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	_, err = b.Client.AppsV1().Deployments(b.Namespace).Patch(ctx, spec.deployment,
-		types.StrategicMergePatchType, pb, metav1.PatchOptions{})
-	if err == nil {
-		err = fmt.Errorf("已回滚 %s 至 revision %d", spec.deployment, revOf(prev))
+	if _, err := b.Client.AppsV1().Deployments(b.Namespace).Patch(ctx, spec.deployment,
+		types.StrategicMergePatchType, pb, metav1.PatchOptions{}); err != nil {
+		return 0, fmt.Errorf("回滚补丁失败: %w", err)
 	}
-	return err
+	return revOf(prev), nil
 }
 
 // mustJSON 序列化辅助。

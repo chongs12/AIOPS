@@ -29,12 +29,14 @@ make run
 ## 系统架构（概览）
 
 ```
-聊天式工单页(React) ──HTTP/SSE──▶ aiops-server（单 Go 二进制）
-   ├─ API 层        工单 CRUD / SSE 聊天 / 管理面
+聊天式工单页(Vue) ──HTTP/SSE──▶ aiops-server（单 Go 二进制，serve 子命令）
+   ├─ API 层        工单 CRUD / SSE 聊天 / 处置 CR / 管理面
    ├─ 编排引擎      工单 FSM（断点恢复）· 黑板（观察集/假设集）· HITL 一等状态 · 回环上限
    ├─ Agent 层     Intent / Metrics / Log / RootCause / Reply（统一接口 + 工厂 + 热更新配置）
    └─ 工具层       Registry + 执行管道：校验→限流→并发闸→缓存→超时→重试→降级→审计
                     Prometheus(模板化 PromQL) · Jaeger · K8s(logs/events/get) · K8s 处置
+aiops-operator（同镜像 operator 子命令，双副本+选主）
+   └─ Remediation CR 控制器：审批门→收敛执行→Prometheus 回验→K8s Events 审计
 存储：PostgreSQL（工单/状态快照/证据/配置/审计）· Redis（缓存/限流）· [M5] Milvus 案例库
 ```
 
@@ -58,11 +60,38 @@ pkg/
   llm/               Provider 工厂 + fallback 链 + Prompt 模板 + 结构化输出
   telemetry/         OTel 初始化（trace/metrics，故障时降级不阻塞主路径）
   config/            YAML + ${VAR} 占位 + 环境变量覆盖
-deploy/              docker-compose(开发依赖) + helm
-web/                 React + Vite 聊天式工单页
+deploy/              docker-compose(开发依赖) + helm（含 Remediation CRD 与 operator 部署）
+web/                 Vue 3 + Vite 聊天式工单页
 scripts/             环境探测、故障注入、演示脚本
 docs/                交接文档 + ADR
 ```
+
+## 处置闭环平台化（Remediation Operator）
+
+处置从"应用内函数"升级为 K8s 声明式 API（`kubectl get remediations -w` 全程可观察）：
+
+```
+工单/告警 ──▶ Remediation CR(PendingApproval) ──人工审批(JWT 身份落 CR)──▶ operator 执行
+                                                                              │
+              工单自动 resolved ◀──镜像回消息流(SSE)◀──回验通过(Prometheus)◀──┘
+```
+
+- **审批即状态**：审批人/时间/批注落在 CR status，拒绝为终态；未审批绝不执行。
+- **收敛式幂等**：回滚目标 revision 在认领时固化进 status，重放任意次收敛同一结果；
+  `observedGeneration` 闸杜绝 spec 变更重复执行。双副本 operator + leader election。
+- **告警联动**：Alertmanager 告警带 `aiops-remediation-action` / `aiops-deployment` /
+  `aiops-replicas` 标签 → 建单并自动创建待审批 CR（执行仍需人工审批）。
+- 设计取舍见 [docs/adr/0003-remediation-operator.md](docs/adr/0003-remediation-operator.md)。
+
+### 部署与体验
+
+```bash
+make deploy                      # docker-build → kind load → helm upgrade（含 CRD/双副本 operator）
+kubectl get remediations -w      # 观察处置全生命周期：PendingApproval→Executing→Verifying→Succeeded
+```
+
+> 注：helm 的 `crds/` 目录仅随首次 install 安装，schema 变更后需手动
+> `kubectl apply -f deploy/helm/aiops/crds/aiops.io_remediations.yaml`。
 
 ## 开发路线
 
@@ -80,6 +109,7 @@ docs/                交接文档 + ADR
 | C5 | pkg/tasks 异步任务状态机（重试梯度/死信/崩溃恢复） | ✅ 完成 |
 | C6 | Dockerfile + Helm + RBAC + Grafana 仪表盘（make deploy 进集群） | ✅ 完成 |
 | C7 | probe 扩展 + 一键演示脚本 | ✅ 完成 |
+| O1 | Remediation Operator：处置闭环平台化（CRD + controller-runtime 控制器，审批门/收敛式幂等执行/回验/告警联动），见 [docs/adr/0003](docs/adr/0003-remediation-operator.md) | ✅ 完成 |
 
 > 真实验收记录（2026-09-05，LLM=火山方舟 deepseek-v4-flash，数据源=PreHire kind 集群）：
 > ①5xx 故障注入→工单→根因（证据绑定，置信度 0.85）→resolved；②处置闭环：人工确认

@@ -83,3 +83,14 @@ llm:
     #   api_key: ${LLM_API_KEY_2}
     #   model: deepseek-chat
   request_timeout_seconds: 90
+
+# Remediation Operator（aiops operator 子命令）：以下均为默认值，显式写出便于理解
+operator:
+  leader_election: true            # 双副本部署时的主选举（Lease）
+  leader_election_id: aiops-operator.aiops.io
+  metrics_addr: ":8060"            # 控制器内建指标
+  verify:                          # 回验默认值（CR spec.verify 零值字段回落到这里）
+    template: http_5xx_rate
+    threshold: 0.05
+    wait_seconds: 60
+    attempts: 3

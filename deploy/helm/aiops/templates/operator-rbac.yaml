@@ -1,0 +1,42 @@
+{{- if .Values.operator.enabled }}
+# Remediation Operator + 服务端处置链路所需的最小权限增补：
+# - remediations CR 的 CRUD/状态写（服务端创建/审批，operator watch/更新状态）
+# - coordination.k8s.io/leases（leader election）
+# - events create/patch（controller-runtime Event recorder 落处置时间线）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aiops-remediation
+rules:
+  - apiGroups: ["aiops.io"]
+    resources: ["remediations"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["aiops.io"]
+    # status 子资源在 RBAC 里是独立条目：controller 写 phase/回验、
+    # 服务端写 approval 都走 /status 端点，漏掉这条 Status() 会全部 403
+    resources: ["remediations/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    # scale 子资源同理独立成条：GetScale/UpdateScale 走 /deployments/x/scale
+    resources: ["deployments/scale"]
+    verbs: ["get", "update"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aiops-remediation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aiops-remediation
+subjects:
+  - kind: ServiceAccount
+    name: aiops
+    namespace: {{ .Release.Namespace }}
+{{- end }}

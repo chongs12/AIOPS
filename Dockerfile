@@ -8,7 +8,9 @@ RUN npm run build
 
 FROM golang:1.26-alpine AS build
 WORKDIR /src
-ENV GOPROXY=https://proxy.golang.org,direct
+# GOPROXY 可构建时覆盖（默认官方源；国内环境 --build-arg GOPROXY=https://goproxy.cn,direct）
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

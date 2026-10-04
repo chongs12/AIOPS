@@ -39,3 +39,12 @@ data:
           max_tokens: 4096
           temperature: 0.2
       request_timeout_seconds: 180
+    operator:
+      leader_election: true
+      leader_election_id: aiops-operator.aiops.io
+      metrics_addr: ":8060"
+      verify:
+        template: http_5xx_rate
+        threshold: 0.05
+        wait_seconds: 60
+        attempts: 3

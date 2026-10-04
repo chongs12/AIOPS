@@ -97,17 +97,29 @@ for i in $(seq 1 300); do curl -s -o /dev/null -m 3 http://localhost:8080/api/v1
 
 ---
 
-## 镜头 7 · 一键处置（详情页 + 终端）
+## 镜头 7 · 发起处置（详情页 + 终端）
 
-**画面**：点报告卡上「查看完整报告 / 执行处置 →」进详情页，滚到处置建议，点「执行」→ 确认对话框 → 确认执行。
-**同时**：切终端跑恢复命令（双保险，确保录制成功率）：
+**画面**：点报告卡上「查看完整报告 / 执行处置 →」进详情页，滚到处置建议，点「发起处置」→ 确认对话框 → 「创建待审批 CR」。
+**同时**：切终端开一个窗口跑：
 ```bash
-kubectl scale deployment makejob-question --replicas=1
+kubectl get remediations -w
 ```
 **台词**：
-> "低危操作可以一键执行，高危的必须人工确认——系统会写审计日志。我来确认扩容……执行成功。同时系统自动安排了恢复复查：它会等指标回落，恢复后自动关单。"
+> "注意，处置不是点击就完事——点「发起处置」会把建议物化成一个 Kubernetes CR，Remediation。它的状态现在是 PendingApproval，等待人工审批。审批人身份、执行结果、恢复回验，全部写在这个 CR 的 status 里——这就是把运维处置做成平台 API。"
 
-**预期画面**：对话框 → 「处置执行结果: ok」消息；详情页时间线出现复查事件。
+**预期画面**：对话框 → 成功消息「处置 CR 已创建，等待人工审批」；终端 `kubectl get remediations -w` 出现一行 `rem-t-…`，PHASE=PendingApproval；详情页出现「处置审批」表格。
+
+---
+
+## 镜头 7B · 人工审批门 → Operator 执行 → 自动回验（详情页 + 终端）
+
+**画面**：详情页「处置审批」表格点「审批」→ 确认；切终端看 `-w` 输出滚动。
+**台词**：
+> "现在我来审批——这里我签的是我的身份，会写进 CR 可追溯。审批通过后，operator 马上认领执行权：PendingApproval → Executing → Verifying。它不是 sleep 完事，而是等观察窗后查真实 Prometheus 指标做恢复回验；回验通过 CR 变 Succeeded，工单自动关闭。整个状态机是 level-triggered 的——现在我可以把 operator 重启甚至杀掉 leader，重启后它从 status 断点续跑，绝不会重复执行变更。"
+
+**预期画面**：`-w` 依次翻过 `PendingApproval → Executing → Verifying → Succeeded`；`kubectl describe remediation rem-…` 可见 Events 时间线；详情页消息流出现 🛠️ Remediation 阶段消息；工单状态变绿「已解决」。
+**彩排要点**：双副本 operator 演示「杀 leader 不双执行」：`kubectl delete pod -l app=aiops-operator` 后观察另一副本接管，Verifying 阶段续跑。
+**兜底**：若 operator 链路现场异常，手动 `kubectl scale deployment makejob-question --replicas=1` 后，CR 回验依然会通过并自动关单（回验只看真实指标，不关心谁修的）——这本身就是一句好台词。
 
 ---
 
@@ -169,6 +181,9 @@ kubectl scale deployment makejob-question --replicas=1
 | OOM 故障 | `kubectl run oom-demo --image=busybox:1.36 --restart=Never --limits=memory=16Mi -- /bin/sh -c "dd if=/dev/zero of=/dev/shm bs=1M count=64"` |
 | 慢查询故障 | `docker exec aiops-postgres psql -U aiops -d aiops -c "SELECT pg_sleep(600)" &` |
 | 清理演示资源 | `kubectl delete pod oom-demo --ignore-not-found` |
+| 观察处置全链 | `kubectl get remediations -w`（PHASE: PendingApproval→Executing→Verifying→Succeeded） |
+| 处置时间线 | `kubectl describe remediation rem-<工单号>`（Events 含审批/执行/回验全过程） |
+| operator 双副本 | `kubectl get pods -l app=aiops-operator`（leader election；杀 leader 后另一副本接管续跑） |
 
 # “能不能让系统自己修好？”
 

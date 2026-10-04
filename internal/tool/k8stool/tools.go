@@ -153,10 +153,11 @@ func NewMutatingTools(b Base) []tool.Tool {
 					return nil, errNeedsConfirm
 				}
 				// 取上一 revision 的 RS 模板回写（kubectl rollout undo 语义）。
-				if err := b.Rollback(ctx, k8sRollbackRequest(p.Deployment)); err != nil {
+				rev, err := b.Rollback(ctx, k8sRollbackRequest(p.Deployment))
+				if err != nil {
 					return nil, err
 				}
-				return map[string]any{"deployment": p.Deployment, "note": "已回滚到上一 revision"}, nil
+				return map[string]any{"deployment": p.Deployment, "revision": rev, "note": "已回滚到上一 revision"}, nil
 			}},
 	}
 }
